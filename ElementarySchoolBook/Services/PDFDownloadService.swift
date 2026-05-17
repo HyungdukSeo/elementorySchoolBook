@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 actor PDFDownloadService {
     // 단축 URL → PDF 다운로드 → 로컬 저장

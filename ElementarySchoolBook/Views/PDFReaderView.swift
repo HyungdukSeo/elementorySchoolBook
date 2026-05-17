@@ -34,8 +34,7 @@ struct PDFReaderView: View {
                         isDrawingMode.toggle()
                     } label: {
                         Image(systemName: isDrawingMode ? "hand.draw.fill" : "hand.draw")
-                            .symbolEffect(.bounce, value: isDrawingMode)
-                    }
+                            }
                     .tint(isDrawingMode ? .blue : .primary)
 
                     Button {
