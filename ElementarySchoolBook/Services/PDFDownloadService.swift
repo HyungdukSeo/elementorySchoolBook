@@ -2,45 +2,66 @@ import Foundation
 import os
 
 actor PDFDownloadService {
+
     // 단축 URL → PDF 다운로드 → 로컬 저장
     func downloadPDF(shortURL: String, to destination: URL, progress: @escaping (Double) -> Void) async throws {
         let pdfURL = try await resolvePDFURL(from: shortURL)
         try await downloadFile(from: pdfURL, to: destination, progress: progress)
     }
 
-    // q.mirae-n.com 단축 URL → 리다이렉트 → viewer URL에서 file= 파라미터 추출
+    // q.mirae-n.com 단축 URL → Location 헤더 raw 값 캡처 → file= 파라미터 추출
     private func resolvePDFURL(from shortURLString: String) async throws -> URL {
         guard let shortURL = URL(string: shortURLString) else {
             throw DownloadError.invalidURL(shortURLString)
         }
 
         let capturer = RedirectCapturer()
-        let session = URLSession(configuration: .default, delegate: capturer, delegateQueue: nil)
+        let session = URLSession(configuration: .ephemeral, delegate: capturer, delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
 
         var request = URLRequest(url: shortURL)
         request.timeoutInterval = 15
-        _ = try? await session.data(for: request)
+        _ = try? await session.data(for: request) // 리다이렉트 중단 시 에러 무시
 
-        guard let viewerURL = capturer.capturedURL else {
+        guard let rawLocation = capturer.rawLocation else {
             throw DownloadError.noRedirect
         }
 
-        // viewer URL: https://viewer-cms.mirae-n.com/...?file=https://privw-cms.mirae-n.com/.../xxx.pdf?token=...
-        guard let components = URLComponents(url: viewerURL, resolvingAgainstBaseURL: false),
-              let fileParam = components.queryItems?.first(where: { $0.name == "file" })?.value,
-              let pdfURL = URL(string: fileParam) else {
+        // rawLocation 예시:
+        // https://viewer-cms.mirae-n.com/...?content_name=...
+        //   &file=https://privw-cms.mirae-n.com/...pdf?token=JWT
+        //   &thumbnail_url=...
+        //
+        // ⚠️ 핵심: file= 값이 이미 percent-encoded 상태 (한글 파일명 포함)
+        // URLComponents.queryItems 로 파싱하면 자동 디코딩 → 한글/공백 포함 → URL() 생성 실패
+        // → raw 문자열에서 직접 추출해 인코딩 유지
+
+        guard let fileRange = rawLocation.range(of: "file=") else {
             throw DownloadError.pdfURLNotFound
         }
+        var rawPDFURL = String(rawLocation[fileRange.upperBound...])
 
+        // &thumbnail_url= 또는 &down_url= 이전까지가 PDF URL
+        for delimiter in ["&thumbnail_url=", "&down_url="] {
+            if let delimRange = rawPDFURL.range(of: delimiter) {
+                rawPDFURL = String(rawPDFURL[..<delimRange.lowerBound])
+                break
+            }
+        }
+
+        guard !rawPDFURL.isEmpty, let pdfURL = URL(string: rawPDFURL) else {
+            throw DownloadError.pdfURLNotFound
+        }
         return pdfURL
     }
 
+    // 스트리밍 다운로드 (진행률 보고)
     private func downloadFile(from url: URL, to destination: URL, progress: @escaping (Double) -> Void) async throws {
         let (asyncBytes, response) = try await URLSession.shared.bytes(from: url)
         let totalBytes = (response as? HTTPURLResponse)?.expectedContentLength ?? -1
 
         var data = Data()
-        data.reserveCapacity(totalBytes > 0 ? Int(totalBytes) : 10_000_000)
+        if totalBytes > 0 { data.reserveCapacity(Int(totalBytes)) }
 
         for try await byte in asyncBytes {
             data.append(byte)
@@ -56,6 +77,8 @@ actor PDFDownloadService {
         try data.write(to: destination, options: .atomic)
     }
 
+    // MARK: - Error
+
     enum DownloadError: LocalizedError {
         case invalidURL(String)
         case noRedirect
@@ -64,18 +87,20 @@ actor PDFDownloadService {
         var errorDescription: String? {
             switch self {
             case .invalidURL(let url): return "잘못된 URL: \(url)"
-            case .noRedirect:          return "다운로드 링크를 가져오지 못했습니다."
+            case .noRedirect:          return "다운로드 링크를 가져오지 못했습니다. 네트워크를 확인해 주세요."
             case .pdfURLNotFound:      return "PDF 주소를 찾을 수 없습니다."
             }
         }
     }
 }
 
-// URLSession delegate: 첫 리다이렉트 URL을 캡처하고 리다이렉트 중단
-private final class RedirectCapturer: NSObject, URLSessionTaskDelegate, Sendable {
-    private let _capturedURL = OSAllocatedUnfairLock<URL?>(initialState: nil)
+// MARK: - Redirect Capturer
 
-    var capturedURL: URL? { _capturedURL.withLock { $0 } }
+// URLSession delegate: 리다이렉트 발생 시 Location 헤더 raw 값을 캡처하고 리다이렉트 중단
+private final class RedirectCapturer: NSObject, URLSessionTaskDelegate, Sendable {
+    private let _rawLocation = OSAllocatedUnfairLock<String?>(initialState: nil)
+
+    var rawLocation: String? { _rawLocation.withLock { $0 } }
 
     func urlSession(
         _ session: URLSession,
@@ -84,7 +109,11 @@ private final class RedirectCapturer: NSObject, URLSessionTaskDelegate, Sendable
         newRequest request: URLRequest,
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
-        _capturedURL.withLock { $0 = request.url }
+        // response.allHeaderFields["Location"]: raw percent-encoded Location 헤더 값 유지
+        // request.url?.absoluteString 은 URLSession이 이미 파싱/정규화한 값이라 디코딩될 수 있음
+        let location = response.allHeaderFields["Location"] as? String
+                    ?? request.url?.absoluteString
+        _rawLocation.withLock { $0 = location }
         completionHandler(nil) // 리다이렉트 중단
     }
 }
