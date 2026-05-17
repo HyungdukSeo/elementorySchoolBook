@@ -4,7 +4,7 @@ import os
 actor PDFDownloadService {
 
     // 단축 URL → PDF 다운로드 → 로컬 저장
-    func downloadPDF(shortURL: String, to destination: URL, progress: @escaping (Double) -> Void) async throws {
+    func downloadPDF(shortURL: String, to destination: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
         let pdfURL = try await resolvePDFURL(from: shortURL)
         try await downloadFile(from: pdfURL, to: destination, progress: progress)
     }
@@ -55,26 +55,21 @@ actor PDFDownloadService {
         return pdfURL
     }
 
-    // 스트리밍 다운로드 (진행률 보고)
-    private func downloadFile(from url: URL, to destination: URL, progress: @escaping (Double) -> Void) async throws {
-        let (asyncBytes, response) = try await URLSession.shared.bytes(from: url)
-        let totalBytes = (response as? HTTPURLResponse)?.expectedContentLength ?? -1
+    // 파일 다운로드 + 진행률 보고 (URLSessionDownloadDelegate 사용)
+    private func downloadFile(from url: URL, to destination: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
+        let delegate = DownloadProgressDelegate(progressHandler: progress)
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForResource = 300
+        let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+        defer { session.finishTasksAndInvalidate() }
 
-        var data = Data()
-        if totalBytes > 0 { data.reserveCapacity(Int(totalBytes)) }
-
-        for try await byte in asyncBytes {
-            data.append(byte)
-            if totalBytes > 0 {
-                await MainActor.run { progress(Double(data.count) / Double(totalBytes)) }
-            }
-        }
+        let (tempURL, _) = try await session.download(from: url)
 
         let fm = FileManager.default
         if fm.fileExists(atPath: destination.path) {
             try fm.removeItem(at: destination)
         }
-        try data.write(to: destination, options: .atomic)
+        try fm.moveItem(at: tempURL, to: destination)
     }
 
     // MARK: - Error
@@ -115,5 +110,38 @@ private final class RedirectCapturer: NSObject, URLSessionTaskDelegate, Sendable
                     ?? request.url?.absoluteString
         _rawLocation.withLock { $0 = location }
         completionHandler(nil) // 리다이렉트 중단
+    }
+}
+
+// MARK: - Download Progress Delegate
+
+// URLSession delegate: PDF 다운로드 진행률을 메인 액터로 전달
+private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    private let progressHandler: @Sendable (Double) -> Void
+
+    init(progressHandler: @escaping @Sendable (Double) -> Void) {
+        self.progressHandler = progressHandler
+        super.init()
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        // download(from:)의 async 반환이 임시 파일 수명을 관리하므로 여기서는 별도 처리 없음
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        guard totalBytesExpectedToWrite > 0 else { return }
+        let value = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+        let handler = progressHandler
+        Task { @MainActor in handler(value) }
     }
 }

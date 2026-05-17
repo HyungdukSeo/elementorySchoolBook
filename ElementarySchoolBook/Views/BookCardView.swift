@@ -24,6 +24,15 @@ struct BookCardView: View {
                         .font(.headline)
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
+                    // 익힘 / 실험관찰 배지
+                    if let label = book.supplementLabel {
+                        Text(label)
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.white.opacity(0.25), in: Capsule())
+                            .foregroundStyle(.white)
+                    }
                 }
 
                 if isDownloading {
@@ -92,15 +101,17 @@ struct BookCardView: View {
 
     private var subjectColor: Color {
         switch book.subject {
-        case "수학": return .blue
-        case "사회": return .orange
-        case "과학": return .green
-        case "영어": return .purple
-        case "미술": return .pink
-        case "음악": return .indigo
-        case "체육": return .red
-        case "실과": return Color(red: 0.6, green: 0.4, blue: 0.2)
-        default:    return .gray
+        case "수학":    return .blue
+        case "수학익힘": return .cyan          // 수학 계열 - 밝은 파랑
+        case "사회":    return .orange
+        case "과학":    return .green
+        case "실험관찰": return .mint           // 과학 계열 - 민트
+        case "영어":    return .purple
+        case "미술":    return .pink
+        case "음악":    return .indigo
+        case "체육":    return .red
+        case "실과":    return Color(red: 0.6, green: 0.4, blue: 0.2)
+        default:       return .gray
         }
     }
 
@@ -114,15 +125,17 @@ struct BookCardView: View {
 
     private var subjectIcon: String {
         switch book.subject {
-        case "수학": return "function"
-        case "사회": return "globe.asia.australia.fill"
-        case "과학": return "atom"
-        case "영어": return "textformat.abc"
-        case "미술": return "paintpalette.fill"
-        case "음악": return "music.note"
-        case "체육": return "figure.run"
-        case "실과": return "wrench.and.screwdriver.fill"
-        default:    return "book.fill"
+        case "수학":    return "function"
+        case "수학익힘": return "pencil.and.list.clipboard"
+        case "사회":    return "globe.asia.australia.fill"
+        case "과학":    return "atom"
+        case "실험관찰": return "flask.fill"
+        case "영어":    return "textformat.abc"
+        case "미술":    return "paintpalette.fill"
+        case "음악":    return "music.note"
+        case "체육":    return "figure.run"
+        case "실과":    return "wrench.and.screwdriver.fill"
+        default:       return "book.fill"
         }
     }
 }

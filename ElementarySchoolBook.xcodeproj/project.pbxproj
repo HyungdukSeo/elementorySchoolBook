@@ -30,7 +30,7 @@
 		CE5458759D2E2040F761DB6D /* Book.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Book.swift; sourceTree = "<group>"; };
 		CE54C7FFFC03E2529F79090B /* ElementarySchoolBookApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElementarySchoolBookApp.swift; sourceTree = "<group>"; };
 		D0A10290188B9FC0CBDFDF9B /* BookCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookCatalog.swift; sourceTree = "<group>"; };
-		FB3ECD4FB413B20E29161DC0 /* ElementarySchoolBook.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ElementarySchoolBook.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FB3ECD4FB413B20E29161DC0 /* ElementarySchoolBook.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ElementarySchoolBook.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FF0C688F605D8E911BC388E2 /* BookStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -129,11 +129,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1500;
-				TargetAttributes = {
-					153CE732D46F6A531E8978C3 = {
-						DevelopmentTeam = "";
-					};
-				};
 			};
 			buildConfigurationList = 88852F16966C3BE392A8570E /* Build configuration list for PBXProject "ElementarySchoolBook" */;
 			developmentRegion = en;
@@ -240,7 +235,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 62UG87M6K3;
 				INFOPLIST_FILE = ElementarySchoolBook/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -258,7 +253,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 62UG87M6K3;
 				INFOPLIST_FILE = ElementarySchoolBook/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
