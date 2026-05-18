@@ -1,5 +1,6 @@
 package com.hdseo.elementaryschoolbook.ui
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
@@ -13,9 +14,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hdseo.elementaryschoolbook.data.Book
 import com.hdseo.elementaryschoolbook.viewmodel.BookStoreViewModel
@@ -27,6 +30,7 @@ fun BookListScreen(viewModel: BookStoreViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var selectedGrade by remember { mutableIntStateOf(3) }
     var openBook by remember { mutableStateOf<Book?>(null) }
+    val context = LocalContext.current
 
     val books = state.books.filter { it.grade == selectedGrade }
 
@@ -40,7 +44,7 @@ fun BookListScreen(viewModel: BookStoreViewModel) {
         )
     }
 
-    // PDF 리더
+    // 내장 PDF 리더 표시
     openBook?.let { book ->
         PdfReaderScreen(
             book = book,
@@ -54,7 +58,25 @@ fun BookListScreen(viewModel: BookStoreViewModel) {
     Scaffold(
         topBar = {
             @OptIn(ExperimentalMaterial3Api::class)
-            TopAppBar(title = { Text("초등 교과서") })
+            TopAppBar(
+                title = { Text("초등 교과서") },
+                actions = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 12.dp)
+                    ) {
+                        Text(
+                            if (state.useExternalViewer) "외장 앱" else "내장 앱",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Switch(
+                            checked = state.useExternalViewer,
+                            onCheckedChange = { viewModel.setUseExternalViewer(it) }
+                        )
+                    }
+                }
+            )
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
@@ -83,7 +105,30 @@ fun BookListScreen(viewModel: BookStoreViewModel) {
                         isDownloading = book.id in state.downloadingIds,
                         progress = state.downloadProgress[book.id] ?: 0f,
                         onDownload = { viewModel.download(book) },
-                        onOpen = { openBook = book }
+                        onOpen = {
+                            if (state.useExternalViewer) {
+                                val pdfFile = viewModel.pdfFile(book)
+                                if (pdfFile.exists()) {
+                                    try {
+                                        val uri = FileProvider.getUriForFile(
+                                            context,
+                                            "${context.packageName}.fileprovider",
+                                            pdfFile
+                                        )
+                                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                                            setDataAndType(uri, "application/pdf")
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        // 외부 앱 실행 실패 시 내장 리더로 폴백 고려 가능
+                                        openBook = book
+                                    }
+                                }
+                            } else {
+                                openBook = book
+                            }
+                        }
                     )
                 }
             }
@@ -159,7 +204,7 @@ fun BookCard(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             LinearProgressIndicator(
-                                progress = { progress },
+                                progress = progress,
                                 color = Color.White,
                                 trackColor = Color.White.copy(alpha = 0.3f),
                                 modifier = Modifier

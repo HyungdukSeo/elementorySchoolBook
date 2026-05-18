@@ -12,14 +12,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 data class BookUiState(
     val books: List<Book> = BookCatalog.all,
     val downloadingIds: Set<String> = emptySet(),
     val downloadProgress: Map<String, Float> = emptyMap(),
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val useExternalViewer: Boolean = false
 )
 
 class BookStoreViewModel(application: Application) : AndroidViewModel(application) {
@@ -34,6 +33,13 @@ class BookStoreViewModel(application: Application) : AndroidViewModel(applicatio
 
     init {
         loadMetadata()
+        val external = prefs.getBoolean("use_external_viewer", false)
+        _uiState.update { it.copy(useExternalViewer = external) }
+    }
+
+    fun setUseExternalViewer(use: Boolean) {
+        prefs.edit().putBoolean("use_external_viewer", use).apply()
+        _uiState.update { it.copy(useExternalViewer = use) }
     }
 
     // ── 다운로드

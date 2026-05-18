@@ -8,6 +8,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.util.concurrent.CopyOnWriteArrayList
 
 // ── 저장 가능한 필기 데이터 구조
 
@@ -31,7 +32,8 @@ class PdfPageView(context: Context) : View(context) {
     var pageBitmap: Bitmap? = null
         set(value) { field = value; invalidate() }
 
-    private val finishedStrokes = mutableListOf<Stroke>()
+    // 필기 획 데이터 (스레드 안전)
+    private val finishedStrokes = CopyOnWriteArrayList<Stroke>()
     private var currentPoints = mutableListOf<StrokePoint>()
     private var isDrawingStroke = false
 
@@ -75,39 +77,53 @@ class PdfPageView(context: Context) : View(context) {
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        // 스타일러스 입력만 처리 → 손가락은 부모(ScrollView)에 전달
-        if (event.getToolType(0) != MotionEvent.TOOL_TYPE_STYLUS) return false
+        // 스타일러스 입력만 처리 → 손가락은 부모(LazyColumn)에 전달하여 스크롤/줌 허용
+        if (event.getToolType(0) != MotionEvent.TOOL_TYPE_STYLUS) {
+            return false
+        }
 
         val x = event.x
         val y = event.y
 
         when (event.action) {
-            MotionEvent.ACTION_DOWN -> {
-                isDrawingStroke = true
-                currentPoints.clear()
-                currentPoints.add(StrokePoint(x, y))
-            }
-            MotionEvent.ACTION_MOVE -> {
-                if (isDrawingStroke) {
-                    currentPoints.add(StrokePoint(x, y))
-                    invalidate()
-                }
-            }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                if (isDrawingStroke && currentPoints.size > 1) {
-                    if (isEraserMode) {
-                        eraseNear(currentPoints)
-                    } else {
-                        finishedStrokes.add(Stroke(currentPoints.toList(), strokeColor, strokeWidth))
-                    }
-                    onDrawingChanged?.invoke()
-                }
-                currentPoints.clear()
-                isDrawingStroke = false
-                invalidate()
-            }
+            MotionEvent.ACTION_DOWN -> handleActionDown(x, y)
+            MotionEvent.ACTION_MOVE -> handleActionMove(x, y)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> handleActionUp()
         }
         return true
+    }
+
+    fun handleActionDown(x: Float, y: Float) {
+        parent?.requestDisallowInterceptTouchEvent(true)
+        isDrawingStroke = true
+        currentPoints.clear()
+        currentPoints.add(StrokePoint(x, y))
+    }
+
+    fun handleActionMove(x: Float, y: Float) {
+        if (isDrawingStroke) {
+            currentPoints.add(StrokePoint(x, y))
+            invalidate()
+        }
+    }
+
+    fun handleActionUp() {
+        if (isDrawingStroke && currentPoints.size > 1) {
+            try {
+                if (isEraserMode) {
+                    eraseNear(currentPoints)
+                } else {
+                    finishedStrokes.add(Stroke(currentPoints.toList(), strokeColor, strokeWidth))
+                }
+                onDrawingChanged?.invoke()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        currentPoints.clear()
+        isDrawingStroke = false
+        parent?.requestDisallowInterceptTouchEvent(false)
+        invalidate()
     }
 
     // 지우개: 경로 근처의 획 제거
@@ -126,17 +142,23 @@ class PdfPageView(context: Context) : View(context) {
 
     fun undo() {
         if (finishedStrokes.isNotEmpty()) {
-            finishedStrokes.removeLastOrNull()
-            onDrawingChanged?.invoke()
-            invalidate()
+            try {
+                finishedStrokes.removeAt(finishedStrokes.size - 1)
+                onDrawingChanged?.invoke()
+                invalidate()
+            } catch (e: Exception) {}
         }
     }
 
     // ── 저장/불러오기
 
     fun saveAnnotation(file: File) {
-        val annotation = Annotation(finishedStrokes.toList())
-        file.writeText(Json.encodeToString(annotation))
+        try {
+            val annotation = Annotation(finishedStrokes.toList())
+            file.writeText(Json.encodeToString(annotation))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     fun loadAnnotation(file: File) {

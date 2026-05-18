@@ -6,19 +6,29 @@ plugins {
 
 android {
     namespace = "com.hdseo.elementaryschoolbook"
-    compileSdk = 35
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "com.hdseo.elementaryschoolbook"
-        minSdk = 26           // Android 8.0 — PdfRenderer 안정화 버전
-        targetSdk = 35
+        minSdk = 26
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("../release-key.jks")
+            storePassword = "android1234"
+            keyAlias = "releaseKey"
+            keyPassword = "android1234"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -31,28 +41,30 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.8"
+        kotlinCompilerExtensionVersion = "1.5.10"
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
 
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = "11"
     }
 }
 
 dependencies {
-    // Compose BOM
-    val composeBom = platform("androidx.compose:compose-bom:2024.02.00")
+    // Compose BOM (2024.02.01 사용 - Compose 1.6 기반)
+    val composeBom = platform("androidx.compose:compose-bom:2024.02.01")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material.icons:icons-extended")
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.animation:animation")
+    implementation("androidx.compose.animation:animation-core")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     // Activity + ViewModel + Navigation
@@ -67,6 +79,6 @@ dependencies {
     // JSON serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
 
-    // DataStore (다운로드 날짜 등 메타 저장)
+    // DataStore
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 }

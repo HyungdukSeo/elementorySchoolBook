@@ -1,8 +1,6 @@
 package com.hdseo.elementaryschoolbook.data
 
 object BookCatalog {
-    val all: List<Book> = grade3 + grade4 + grade5 + grade6
-
     // ── 3학년
     val grade3 = listOf(
         Book("math-3-1",     "수학 3-1",     "수학3-1",      3, "수학",    "1"),
@@ -78,4 +76,6 @@ object BookCatalog {
         Book("sci-lab-6-1",  "실험관찰 6-1", "실험관찰 6-1", 6, "실험관찰", "10012", "실험관찰"),
         Book("sci-lab-6-2",  "실험관찰 6-2", "실험관찰 6-2", 6, "실험관찰", "10012", "실험관찰"),
     )
+
+    val all: List<Book> = grade3 + grade4 + grade5 + grade6
 }
