@@ -16,6 +16,7 @@
 		9E1613CEA0DCDB2BB4CD9A33 /* BookListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C47C6EB4AD654991C9C9AA4A /* BookListView.swift */; };
 		A2BA040648B424BA008ECBFD /* ElementarySchoolBookApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE54C7FFFC03E2529F79090B /* ElementarySchoolBookApp.swift */; };
 		B9B6D343699AB510DC816EAF /* BookCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48FDCEB854C8EA701A39E308 /* BookCardView.swift */; };
+		BBBF3856F444AADB7A9CC161 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CF1CE4D78F93D7AEDD5B3809 /* Assets.xcassets */; };
 		EB6483C9846AF51F3150538C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 779B4BC9D47F5CED25B3DDC9 /* ContentView.swift */; };
 /* End PBXBuildFile section */
 
@@ -29,6 +30,7 @@
 		C47C6EB4AD654991C9C9AA4A /* BookListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookListView.swift; sourceTree = "<group>"; };
 		CE5458759D2E2040F761DB6D /* Book.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Book.swift; sourceTree = "<group>"; };
 		CE54C7FFFC03E2529F79090B /* ElementarySchoolBookApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElementarySchoolBookApp.swift; sourceTree = "<group>"; };
+		CF1CE4D78F93D7AEDD5B3809 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D0A10290188B9FC0CBDFDF9B /* BookCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookCatalog.swift; sourceTree = "<group>"; };
 		FB3ECD4FB413B20E29161DC0 /* ElementarySchoolBook.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ElementarySchoolBook.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FF0C688F605D8E911BC388E2 /* BookStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookStore.swift; sourceTree = "<group>"; };
@@ -75,6 +77,7 @@
 		C23B1F1074AEAC155AC8F04E /* ElementarySchoolBook */ = {
 			isa = PBXGroup;
 			children = (
+				CF1CE4D78F93D7AEDD5B3809 /* Assets.xcassets */,
 				CE54C7FFFC03E2529F79090B /* ElementarySchoolBookApp.swift */,
 				7428F2F0D069936520291C3B /* Info.plist */,
 				7181D99465BA53180D7E1E2F /* Models */,
@@ -109,6 +112,7 @@
 			buildConfigurationList = 717BF399671DE7544F70A9BD /* Build configuration list for PBXNativeTarget "ElementarySchoolBook" */;
 			buildPhases = (
 				7F4C8E609283DF806298D4BA /* Sources */,
+				F7BC42B400E78DCF8EB0DFDA /* Resources */,
 			);
 			buildRules = (
 			);
@@ -128,7 +132,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 1500;
+				LastUpgradeCheck = 2650;
 			};
 			buildConfigurationList = 88852F16966C3BE392A8570E /* Build configuration list for PBXProject "ElementarySchoolBook" */;
 			developmentRegion = en;
@@ -148,6 +152,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F7BC42B400E78DCF8EB0DFDA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BBBF3856F444AADB7A9CC161 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		7F4C8E609283DF806298D4BA /* Sources */ = {
@@ -206,8 +221,10 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 62UG87M6K3;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -222,6 +239,7 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPAD = NO;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
@@ -235,7 +253,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 62UG87M6K3;
 				INFOPLIST_FILE = ElementarySchoolBook/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -253,7 +270,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 62UG87M6K3;
 				INFOPLIST_FILE = ElementarySchoolBook/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -302,8 +318,10 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 62UG87M6K3;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -325,6 +343,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPAD = NO;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
