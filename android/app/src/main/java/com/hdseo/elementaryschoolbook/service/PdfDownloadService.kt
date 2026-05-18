@@ -9,20 +9,17 @@ import java.net.URL
 class PdfDownloadService {
 
     suspend fun downloadPdf(
-        shortUrl: String,
+        url: String,
         destination: File,
+        isDirectUrl: Boolean = false,
         onProgress: (Float) -> Unit
     ) = withContext(Dispatchers.IO) {
-        val pdfUrl = resolvePdfUrl(shortUrl)
-        downloadFile(pdfUrl, destination, onProgress)
+        val finalUrl = if (isDirectUrl) url else resolvePdfUrl(url)
+        downloadFile(finalUrl, destination, onProgress)
     }
 
     /**
      * q.mirae-n.com 단축 URL → 302 Location 헤더에서 file= 파라미터 raw 추출
-     *
-     * ⚠️ iOS 버전과 동일한 버그 방지:
-     *   Location 헤더의 file= 값은 percent-encoded 상태.
-     *   URLDecoder로 디코딩하면 한글/공백이 생겨 URL 객체 생성 실패 → raw 그대로 사용.
      */
     private fun resolvePdfUrl(shortUrl: String): String {
         val conn = URL(shortUrl).openConnection() as HttpURLConnection

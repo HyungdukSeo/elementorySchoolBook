@@ -28,11 +28,13 @@ import java.util.*
 @Composable
 fun BookListScreen(viewModel: BookStoreViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var selectedGrade by remember { mutableIntStateOf(3) }
     var openBook by remember { mutableStateOf<Book?>(null) }
     val context = LocalContext.current
 
-    val books = state.books.filter { it.grade == selectedGrade }
+    val publishers = listOf("천재교육", "미래엔", "비상교육", "동아출판")
+    val books = state.books.filter { 
+        it.publisher == state.selectedPublisher && it.grade == state.selectedGrade 
+    }
 
     // 오류 다이얼로그
     state.errorMessage?.let { msg ->
@@ -80,56 +82,76 @@ fun BookListScreen(viewModel: BookStoreViewModel) {
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
+            // 출판사 탭
+            TabRow(selectedTabIndex = publishers.indexOf(state.selectedPublisher)) {
+                publishers.forEach { pub ->
+                    Tab(
+                        selected = state.selectedPublisher == pub,
+                        onClick = { viewModel.setPublisher(pub) },
+                        text = { Text(pub) }
+                    )
+                }
+            }
+
             // 학년 탭
-            TabRow(selectedTabIndex = selectedGrade - 3) {
+            TabRow(
+                selectedTabIndex = state.selectedGrade - 3,
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            ) {
                 (3..6).forEach { grade ->
                     Tab(
-                        selected = selectedGrade == grade,
-                        onClick = { selectedGrade = grade },
+                        selected = state.selectedGrade == grade,
+                        onClick = { viewModel.setGrade(grade) },
                         text = { Text("${grade}학년") }
                     )
                 }
             }
 
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 160.dp),
-                contentPadding = PaddingValues(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(books, key = { it.id }) { book ->
-                    BookCard(
-                        book = book,
-                        isDownloaded = viewModel.isDownloaded(book),
-                        isDownloading = book.id in state.downloadingIds,
-                        progress = state.downloadProgress[book.id] ?: 0f,
-                        onDownload = { viewModel.download(book) },
-                        onOpen = {
-                            if (state.useExternalViewer) {
-                                val pdfFile = viewModel.pdfFile(book)
-                                if (pdfFile.exists()) {
-                                    try {
-                                        val uri = FileProvider.getUriForFile(
-                                            context,
-                                            "${context.packageName}.fileprovider",
-                                            pdfFile
-                                        )
-                                        val intent = Intent(Intent.ACTION_VIEW).apply {
-                                            setDataAndType(uri, "application/pdf")
-                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            if (books.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("해당 출판사의 교과서 목록이 아직 준비되지 않았습니다.", color = Color.Gray)
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 160.dp),
+                    contentPadding = PaddingValues(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(books, key = { it.id }) { book ->
+                        BookCard(
+                            book = book,
+                            isDownloaded = viewModel.isDownloaded(book),
+                            isDownloading = book.id in state.downloadingIds,
+                            progress = state.downloadProgress[book.id] ?: 0f,
+                            onDownload = { viewModel.download(book) },
+                            onOpen = {
+                                if (state.useExternalViewer) {
+                                    val pdfFile = viewModel.pdfFile(book)
+                                    if (pdfFile.exists()) {
+                                        try {
+                                            val uri = FileProvider.getUriForFile(
+                                                context,
+                                                "${context.packageName}.fileprovider",
+                                                pdfFile
+                                            )
+                                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                                setDataAndType(uri, "application/pdf")
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            openBook = book
                                         }
-                                        context.startActivity(intent)
-                                    } catch (e: Exception) {
-                                        // 외부 앱 실행 실패 시 내장 리더로 폴백 고려 가능
-                                        openBook = book
                                     }
+                                } else {
+                                    openBook = book
                                 }
-                            } else {
-                                openBook = book
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -153,7 +175,6 @@ fun BookCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column {
-            // 표지
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -176,7 +197,8 @@ fun BookCard(
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.bodyMedium
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(horizontal = 8.dp)
                     )
                     book.supplementLabel?.let { label ->
                         Spacer(Modifier.height(2.dp))
@@ -194,7 +216,6 @@ fun BookCard(
                     }
                 }
 
-                // 다운로드 중 오버레이
                 if (isDownloading) {
                     Box(
                         Modifier
@@ -222,7 +243,6 @@ fun BookCard(
                 }
             }
 
-            // 버튼 영역
             Column(
                 Modifier.padding(8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)

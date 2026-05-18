@@ -18,7 +18,9 @@ data class BookUiState(
     val downloadingIds: Set<String> = emptySet(),
     val downloadProgress: Map<String, Float> = emptyMap(),
     val errorMessage: String? = null,
-    val useExternalViewer: Boolean = false
+    val useExternalViewer: Boolean = false,
+    val selectedPublisher: String = "미래엔",
+    val selectedGrade: Int = 3
 )
 
 class BookStoreViewModel(application: Application) : AndroidViewModel(application) {
@@ -34,12 +36,28 @@ class BookStoreViewModel(application: Application) : AndroidViewModel(applicatio
     init {
         loadMetadata()
         val external = prefs.getBoolean("use_external_viewer", false)
-        _uiState.update { it.copy(useExternalViewer = external) }
+        val publisher = prefs.getString("selected_publisher", "미래엔") ?: "미래엔"
+        val grade = prefs.getInt("selected_grade", 3)
+        _uiState.update { it.copy(
+            useExternalViewer = external,
+            selectedPublisher = publisher,
+            selectedGrade = grade
+        ) }
     }
 
     fun setUseExternalViewer(use: Boolean) {
         prefs.edit().putBoolean("use_external_viewer", use).apply()
         _uiState.update { it.copy(useExternalViewer = use) }
+    }
+
+    fun setPublisher(publisher: String) {
+        prefs.edit().putString("selected_publisher", publisher).apply()
+        _uiState.update { it.copy(selectedPublisher = publisher) }
+    }
+
+    fun setGrade(grade: Int) {
+        prefs.edit().putInt("selected_grade", grade).apply()
+        _uiState.update { it.copy(selectedGrade = grade) }
     }
 
     // ── 다운로드
@@ -51,8 +69,15 @@ class BookStoreViewModel(application: Application) : AndroidViewModel(applicatio
 
         viewModelScope.launch {
             try {
-                val shortUrl = catalogService.fetchShortUrl(book)
-                downloadService.downloadPdf(shortUrl, book.pdfFile(filesDir)) { progress ->
+                val isChunjae = book.publisher == "천재교육"
+                val url = if (isChunjae) {
+                    // 천재교육은 바로 PDF 링크로 변환
+                    book.viewPageId.replace("/view/sd;streamdocsId=", "/v4/documents/")
+                } else {
+                    catalogService.fetchShortUrl(book)
+                }
+                
+                downloadService.downloadPdf(url, book.pdfFile(filesDir), isChunjae) { progress ->
                     _uiState.update { s ->
                         s.copy(downloadProgress = s.downloadProgress + (book.id to progress))
                     }
