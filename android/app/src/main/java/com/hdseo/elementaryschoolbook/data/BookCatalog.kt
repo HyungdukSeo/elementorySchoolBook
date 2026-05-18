@@ -70,22 +70,5 @@ object BookCatalog {
         Book("sci-lab-6-2",  "실험관찰 6-2", "실험관찰 6-2", 6, "실험관찰", "10012", "실험관찰", publisher = "미래엔"),
     )
 
-    // ── 천재교육 (Chunjae)
-    private val chunjae = listOf(
-        Book("cj-math-3-1-p", "수학 3-1 (박만구)", "", 3, "수학", "https://view.chunjae.co.kr/streamdocs/view/sd;streamdocsId=ID_MATH_3_1_P", publisher = "천재교육"),
-        Book("cj-math-3-1-h", "수학 3-1 (한대희)", "", 3, "수학", "https://view.chunjae.co.kr/streamdocs/view/sd;streamdocsId=ID_MATH_3_1_H", publisher = "천재교육"),
-        Book("cj-social-3-1", "사회 3-1 (김정인)", "", 3, "사회", "https://view.chunjae.co.kr/streamdocs/view/sd;streamdocsId=ID_SOCIAL_3_1", publisher = "천재교육"),
-        Book("cj-science-3-1", "과학 3-1", "", 3, "과학", "https://view.chunjae.co.kr/streamdocs/view/sd;streamdocsId=ID_SCIENCE_3_1", publisher = "천재교육"),
-        
-        Book("cj-math-4-1-p", "수학 4-1 (박만구)", "", 4, "수학", "https://view.chunjae.co.kr/streamdocs/view/sd;streamdocsId=ID_MATH_4_1_P", publisher = "천재교육"),
-        Book("cj-social-4-1", "사회 4-1", "", 4, "사회", "https://view.chunjae.co.kr/streamdocs/view/sd;streamdocsId=ID_SOCIAL_4_1", publisher = "천재교육"),
-        
-        Book("cj-math-5-1", "수학 5-1", "", 5, "수학", "https://view.chunjae.co.kr/streamdocs/view/sd;streamdocsId=ID_MATH_5_1", publisher = "천재교육"),
-        Book("cj-social-5-1", "사회 5-1", "", 5, "사회", "https://view.chunjae.co.kr/streamdocs/view/sd;streamdocsId=ID_SOCIAL_5_1", publisher = "천재교육"),
-        
-        Book("cj-math-6-1", "수학 6-1", "", 6, "수학", "https://view.chunjae.co.kr/streamdocs/view/sd;streamdocsId=ID_MATH_6_1", publisher = "천재교육"),
-        Book("cj-social-6-1", "사회 6-1", "", 6, "사회", "https://view.chunjae.co.kr/streamdocs/view/sd;streamdocsId=ID_SOCIAL_6_1", publisher = "천재교육"),
-    )
-
-    val all: List<Book> = miraeN + chunjae
+    val all: List<Book> = miraeN + TsherpaBookCatalog.all
 }

@@ -7,6 +7,7 @@ import com.hdseo.elementaryschoolbook.data.Book
 import com.hdseo.elementaryschoolbook.data.BookCatalog
 import com.hdseo.elementaryschoolbook.service.BookCatalogService
 import com.hdseo.elementaryschoolbook.service.PdfDownloadService
+import com.hdseo.elementaryschoolbook.service.TsherpaCatalogService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +29,7 @@ class BookStoreViewModel(application: Application) : AndroidViewModel(applicatio
     private val filesDir = application.filesDir
     private val prefs = application.getSharedPreferences("book_meta", 0)
     private val catalogService = BookCatalogService()
+    private val tsherpaCatalogService = TsherpaCatalogService()
     private val downloadService = PdfDownloadService()
 
     private val _uiState = MutableStateFlow(BookUiState())
@@ -69,15 +71,16 @@ class BookStoreViewModel(application: Application) : AndroidViewModel(applicatio
 
         viewModelScope.launch {
             try {
-                val isChunjae = book.publisher == "천재교육"
-                val url = if (isChunjae) {
-                    // 천재교육은 바로 PDF 링크로 변환
-                    book.viewPageId.replace("/view/sd;streamdocsId=", "/v4/documents/")
+                val url = if (book.publisher == "천재교육") {
+                    // 천재교육: filePath → streamdocs API → PDF URL
+                    tsherpaCatalogService.resolvePdfUrl(book.viewPageId)
                 } else {
+                    // 미래엔: 단축 URL → redirect → PDF URL
                     catalogService.fetchShortUrl(book)
                 }
-                
-                downloadService.downloadPdf(url, book.pdfFile(filesDir), isChunjae) { progress ->
+                val isDirectUrl = book.publisher == "천재교육"
+
+                downloadService.downloadPdf(url, book.pdfFile(filesDir), isDirectUrl) { progress ->
                     _uiState.update { s ->
                         s.copy(downloadProgress = s.downloadProgress + (book.id to progress))
                     }
