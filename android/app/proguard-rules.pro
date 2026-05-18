@@ -1,0 +1,2 @@
+-keep class com.hdseo.elementaryschoolbook.data.** { *; }
+-keepattributes *Annotation*
