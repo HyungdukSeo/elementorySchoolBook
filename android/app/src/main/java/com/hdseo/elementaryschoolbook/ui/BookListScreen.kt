@@ -2,7 +2,9 @@ package com.hdseo.elementaryschoolbook.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,6 +46,17 @@ fun BookListScreen(viewModel: BookStoreViewModel) {
             title = { Text("오류") },
             text = { Text(msg) },
             confirmButton = { TextButton(onClick = viewModel::clearError) { Text("확인") } }
+        )
+    }
+
+    state.catalogMessage?.let { msg ->
+        AlertDialog(
+            onDismissRequest = viewModel::clearCatalogMessage,
+            title = { Text("도서 목록 업데이트") },
+            text = { Text(msg) },
+            confirmButton = {
+                TextButton(onClick = viewModel::clearCatalogMessage) { Text("확인") }
+            }
         )
     }
 
@@ -112,6 +125,25 @@ fun BookListScreen(viewModel: BookStoreViewModel) {
                 }
             }
 
+            OutlinedButton(
+                onClick = { viewModel.updateSelectedPublisherCatalog() },
+                enabled = !state.isUpdatingCatalog,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                if (state.isUpdatingCatalog) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(Icons.Default.Sync, null, Modifier.size(16.dp))
+                }
+                Spacer(Modifier.width(6.dp))
+                Text("${state.selectedPublisher} 도서 목록 업데이트")
+            }
+
             if (books.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("해당 출판사의 교과서 목록이 아직 준비되지 않았습니다.", color = Color.Gray)
@@ -125,52 +157,37 @@ fun BookListScreen(viewModel: BookStoreViewModel) {
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(books, key = { it.id }) { book ->
-                        if (book.publisher == "동아출판" || book.publisher == "YBM") {
-                            // 동아출판/YBM: PDF 직접 다운로드 불가 → 웹 뷰어 버튼만 표시
-                            BookCard(
-                                book = book,
-                                isDownloaded = true, // 항상 "열기" 버튼 표시
-                                isDownloading = false,
-                                progress = 0f,
-                                onDownload = { },
-                                onOpen = {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(book.viewPageId))
-                                    context.startActivity(intent)
-                                },
-                                isWebOnly = true
-                            )
-                        } else {
-                            BookCard(
-                                book = book,
-                                isDownloaded = viewModel.isDownloaded(book),
-                                isDownloading = book.id in state.downloadingIds,
-                                progress = state.downloadProgress[book.id] ?: 0f,
-                                onDownload = { viewModel.download(book) },
-                                onOpen = {
-                                    if (state.useExternalViewer) {
-                                        val pdfFile = viewModel.pdfFile(book)
-                                        if (pdfFile.exists()) {
-                                            try {
-                                                val uri = FileProvider.getUriForFile(
-                                                    context,
-                                                    "${context.packageName}.fileprovider",
-                                                    pdfFile
-                                                )
-                                                val intent = Intent(Intent.ACTION_VIEW).apply {
-                                                    setDataAndType(uri, "application/pdf")
-                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                                }
-                                                context.startActivity(intent)
-                                            } catch (e: Exception) {
-                                                openBook = book
+                        BookCard(
+                            book = book,
+                            isDownloaded = viewModel.isDownloaded(book),
+                            isDownloading = book.id in state.downloadingIds,
+                            progress = state.downloadProgress[book.id] ?: 0f,
+                            onDownload = { viewModel.download(book) },
+                            onDelete = { viewModel.delete(book) },
+                            onOpen = {
+                                if (state.useExternalViewer) {
+                                    val pdfFile = viewModel.pdfFile(book)
+                                    if (pdfFile.exists()) {
+                                        try {
+                                            val uri = FileProvider.getUriForFile(
+                                                context,
+                                                "${context.packageName}.fileprovider",
+                                                pdfFile
+                                            )
+                                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                                setDataAndType(uri, "application/pdf")
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                             }
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            openBook = book
                                         }
-                                    } else {
-                                        openBook = book
                                     }
+                                } else {
+                                    openBook = book
                                 }
-                            )
-                        }
+                            }
+                        )
                     }
                 }
             }
@@ -179,6 +196,7 @@ fun BookListScreen(viewModel: BookStoreViewModel) {
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 fun BookCard(
     book: Book,
     isDownloaded: Boolean,
@@ -186,14 +204,39 @@ fun BookCard(
     progress: Float,
     onDownload: () -> Unit,
     onOpen: () -> Unit,
+    onDelete: () -> Unit,
     isWebOnly: Boolean = false
 ) {
-    val color = subjectColor(book.subject)
+    val color = if (book.isArchived) Color(0xFF8A8F98) else subjectColor(book.subject)
+    var showMenu by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("도서 삭제") },
+            text = { Text("목록과 저장된 PDF, 필기 데이터를 삭제할까요?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    onDelete()
+                }) { Text("삭제") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("취소") }
+            }
+        )
+    }
 
     Card(
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = {},
+                onLongClick = { showMenu = true }
+            )
     ) {
         Column {
             Box(
@@ -235,6 +278,20 @@ fun BookCard(
                             )
                         }
                     }
+                    if (book.isArchived) {
+                        Spacer(Modifier.height(4.dp))
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.22f),
+                            shape = RoundedCornerShape(50)
+                        ) {
+                            Text(
+                                "보관됨",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                 }
 
                 if (isDownloading) {
@@ -268,7 +325,32 @@ fun BookCard(
                 Modifier.padding(8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                if (isWebOnly) {
+                if (showMenu) {
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("삭제") },
+                            leadingIcon = { Icon(Icons.Default.Delete, null) },
+                            onClick = {
+                                showMenu = false
+                                showDeleteConfirm = true
+                            }
+                        )
+                    }
+                }
+
+                if (book.isArchived && !isDownloaded) {
+                    OutlinedButton(
+                        onClick = { showDeleteConfirm = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Delete, null, Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("삭제", style = MaterialTheme.typography.bodySmall)
+                    }
+                } else if (isWebOnly) {
                     Button(
                         onClick = onOpen,
                         modifier = Modifier.fillMaxWidth(),
@@ -290,7 +372,7 @@ fun BookCard(
                     }
                     OutlinedButton(
                         onClick = onDownload,
-                        enabled = !isDownloading,
+                        enabled = !isDownloading && !book.isArchived,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.Refresh, null, Modifier.size(14.dp))

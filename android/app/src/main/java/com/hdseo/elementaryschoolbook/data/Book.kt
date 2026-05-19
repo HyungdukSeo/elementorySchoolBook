@@ -13,7 +13,9 @@ data class Book(
     val viewPageId: String,
     val viewSection: String = "교과서",
     val lastDownloaded: Long? = null,   // epoch millis
-    val publisher: String = "미래엔"
+    val publisher: String = "미래엔",
+    val isArchived: Boolean = false,
+    val catalogKey: String = id
 ) {
     fun pdfFile(filesDir: File): File = File(filesDir, "$id.pdf")
     fun annotationFile(filesDir: File): File = File(filesDir, "$id.json")

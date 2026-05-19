@@ -27,6 +27,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hdseo.ElementarySchoolBook
         INFOPLIST_FILE: ElementarySchoolBook/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         DEVELOPMENT_TEAM: ""
     info:
       path: ElementarySchoolBook/Info.plist

@@ -3,26 +3,37 @@ package com.hdseo.elementaryschoolbook.data
 /**
  * YBM 초등 교과서 카탈로그
  *
- * YBM은 PDF 뷰어에 로그인(SSO)이 필요하므로
- * 앱 내 직접 다운로드 대신 외부 브라우저로 뷰어 URL을 열어줌.
+ * YBM은 홍보관 JSON/API에서 contentId를 찾고,
+ * REST API를 통해 PDF URL을 조회한 후 다운로드한다.
  *
- * viewPageId에 뷰어 URL 저장:
- *   교과서 → /prcenter_viewer?contentId={contentId}
+ * viewPageId에는 contentId 또는 "book03|3학년 1학기|교과서" 형식의
+ * 홍보관 선택자를 저장한다.
  *
  * 저자: 영어–김혜리/최희경, 수학–류희찬, 사회–남상준,
  *       음악–양소영, 체육–이기청, 보건–우옥영, 실과–이상원
  */
 object YbmBookCatalog {
 
-    private const val BASE = "https://www.ybmcloud.com/prcenter_viewer?contentId="
-
     private fun ybm(
         id: String, title: String, grade: Int, subject: String,
         contentId: String, section: String = "교과서"
     ) = Book(
         id = id, title = title, linkTitle = "", grade = grade,
-        subject = subject, viewPageId = "$BASE$contentId",
+        subject = subject, viewPageId = contentId,  // contentId 저장
         viewSection = section, publisher = "YBM"
+    )
+
+    private fun ybmPrcenter(
+        id: String, title: String, grade: Int, subject: String,
+        bookCode: String, semester: String, materialTitle: String = "교과서",
+        section: String = "교과서"
+    ) = ybm(
+        id = id,
+        title = title,
+        grade = grade,
+        subject = subject,
+        contentId = "$bookCode|$semester|$materialTitle",
+        section = section
     )
 
     // ─────────────────────────── 영어 (김혜리) 3~6 ──────────────────────────
@@ -43,14 +54,14 @@ object YbmBookCatalog {
 
     // ─────────────────────────── 수학 (류희찬) 3~6 ──────────────────────────
     private val math = listOf(
-        ybm("ybm-math-3-1", "수학 3-1 (류희찬)", 3, "수학", "C20240816013849AFl2Q"),
-        ybm("ybm-math-3-2", "수학 3-2 (류희찬)", 3, "수학", "C202408160139403bXJA"),
-        ybm("ybm-math-4-1", "수학 4-1 (류희찬)", 4, "수학", "C202408160142032nD0p"),
-        ybm("ybm-math-4-2", "수학 4-2 (류희찬)", 4, "수학", "C20240816014237Jvun5"),
-        ybm("ybm-math-5-1", "수학 5-1 (류희찬)", 5, "수학", "C20250807032905fQEdP"),
-        ybm("ybm-math-5-2", "수학 5-2 (류희찬)", 5, "수학", "C202508070329053d9ia"),
-        ybm("ybm-math-6-1", "수학 6-1 (류희찬)", 6, "수학", "C20250807032905HNc0v"),
-        ybm("ybm-math-6-2", "수학 6-2 (류희찬)", 6, "수학", "C20250807032905K5BCw"),
+        ybmPrcenter("ybm-math-3-1", "수학 3-1 (류희찬)", 3, "수학", "book03", "3학년 1학기"),
+        ybmPrcenter("ybm-math-3-2", "수학 3-2 (류희찬)", 3, "수학", "book03", "3학년 2학기"),
+        ybmPrcenter("ybm-math-4-1", "수학 4-1 (류희찬)", 4, "수학", "book03", "4학년 1학기"),
+        ybmPrcenter("ybm-math-4-2", "수학 4-2 (류희찬)", 4, "수학", "book03", "4학년 2학기"),
+        ybmPrcenter("ybm-math-5-1", "수학 5-1 (류희찬)", 5, "수학", "book13", "5학년 1학기"),
+        ybmPrcenter("ybm-math-5-2", "수학 5-2 (류희찬)", 5, "수학", "book13", "5학년 2학기"),
+        ybmPrcenter("ybm-math-6-1", "수학 6-1 (류희찬)", 6, "수학", "book13", "6학년 1학기"),
+        ybmPrcenter("ybm-math-6-2", "수학 6-2 (류희찬)", 6, "수학", "book13", "6학년 2학기"),
     )
 
     // ─────────────────────────── 사회 (남상준) 3~6 ──────────────────────────
