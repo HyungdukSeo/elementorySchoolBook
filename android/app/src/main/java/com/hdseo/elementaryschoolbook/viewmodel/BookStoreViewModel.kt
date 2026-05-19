@@ -8,6 +8,7 @@ import com.hdseo.elementaryschoolbook.data.BookCatalog
 import com.hdseo.elementaryschoolbook.service.BookCatalogService
 import com.hdseo.elementaryschoolbook.service.PdfDownloadService
 import com.hdseo.elementaryschoolbook.service.TsherpaCatalogService
+import com.hdseo.elementaryschoolbook.service.VivasamCatalogService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,6 +31,7 @@ class BookStoreViewModel(application: Application) : AndroidViewModel(applicatio
     private val prefs = application.getSharedPreferences("book_meta", 0)
     private val catalogService = BookCatalogService()
     private val tsherpaCatalogService = TsherpaCatalogService()
+    private val vivasamCatalogService = VivasamCatalogService()
     private val downloadService = PdfDownloadService()
 
     private val _uiState = MutableStateFlow(BookUiState())
@@ -71,18 +73,51 @@ class BookStoreViewModel(application: Application) : AndroidViewModel(applicatio
 
         viewModelScope.launch {
             try {
-                val url = if (book.publisher == "천재교육") {
-                    // 천재교육: filePath → streamdocs API → PDF URL
-                    tsherpaCatalogService.resolvePdfUrl(book.viewPageId)
-                } else {
-                    // 미래엔: 단축 URL → redirect → PDF URL
-                    catalogService.fetchShortUrl(book)
-                }
-                val isDirectUrl = book.publisher == "천재교육"
-
-                downloadService.downloadPdf(url, book.pdfFile(filesDir), isDirectUrl) { progress ->
-                    _uiState.update { s ->
-                        s.copy(downloadProgress = s.downloadProgress + (book.id to progress))
+                when (book.publisher) {
+                    "비상교육" -> {
+                        // 비상교육: iBook ID → 페이지별 PDF 다운로드 → 병합
+                        vivasamCatalogService.downloadAndMerge(
+                            ibookId = book.viewPageId,
+                            destination = book.pdfFile(filesDir)
+                        ) { progress ->
+                            _uiState.update { s ->
+                                s.copy(downloadProgress = s.downloadProgress + (book.id to progress))
+                            }
+                        }
+                    }
+                    "동아출판" -> {
+                        // 동아출판: PDF 직접 다운로드 불가 → 외부 브라우저로 안내
+                        throw Exception("동아출판 교과서는 PDF 다운로드를 지원하지 않습니다.\n'웹 뷰어' 버튼을 누르면 브라우저에서 열립니다.")
+                    }
+                    "YBM" -> {
+                        // YBM: 로그인 필요 → 외부 브라우저로 안내
+                        throw Exception("YBM 교과서는 로그인이 필요합니다.\n'웹 뷰어' 버튼을 눌러 브라우저에서 로그인 후 열어주세요.")
+                    }
+                    "천재교육" -> {
+                        // 천재교육: filePath → streamdocs API → PDF URL
+                        val url = tsherpaCatalogService.resolvePdfUrl(book.viewPageId)
+                        downloadService.downloadPdf(url, book.pdfFile(filesDir), isDirectUrl = true) { progress ->
+                            _uiState.update { s ->
+                                s.copy(downloadProgress = s.downloadProgress + (book.id to progress))
+                            }
+                        }
+                    }
+                    "지학사", "아이스크림미디어" -> {
+                        // 지학사·아이스크림: viewPageId 가 직접 PDF URL
+                        downloadService.downloadPdf(book.viewPageId, book.pdfFile(filesDir), isDirectUrl = true) { progress ->
+                            _uiState.update { s ->
+                                s.copy(downloadProgress = s.downloadProgress + (book.id to progress))
+                            }
+                        }
+                    }
+                    else -> {
+                        // 미래엔: 단축 URL → redirect → PDF URL
+                        val url = catalogService.fetchShortUrl(book)
+                        downloadService.downloadPdf(url, book.pdfFile(filesDir)) { progress ->
+                            _uiState.update { s ->
+                                s.copy(downloadProgress = s.downloadProgress + (book.id to progress))
+                            }
+                        }
                     }
                 }
                 updateLastDownloaded(book.id, System.currentTimeMillis())

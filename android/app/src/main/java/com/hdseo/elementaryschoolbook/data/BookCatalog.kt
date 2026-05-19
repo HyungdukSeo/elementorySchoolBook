@@ -70,5 +70,7 @@ object BookCatalog {
         Book("sci-lab-6-2",  "실험관찰 6-2", "실험관찰 6-2", 6, "실험관찰", "10012", "실험관찰", publisher = "미래엔"),
     )
 
-    val all: List<Book> = miraeN + TsherpaBookCatalog.all
+    val all: List<Book> = miraeN + TsherpaBookCatalog.all + VivasamBookCatalog.all +
+            JihaksaBookCatalog.all + IScreamBookCatalog.all + DongaBookCatalog.all +
+            YbmBookCatalog.all
 }

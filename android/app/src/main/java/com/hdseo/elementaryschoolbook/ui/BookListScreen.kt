@@ -1,6 +1,7 @@
 package com.hdseo.elementaryschoolbook.ui
 
 import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
@@ -31,7 +32,7 @@ fun BookListScreen(viewModel: BookStoreViewModel) {
     var openBook by remember { mutableStateOf<Book?>(null) }
     val context = LocalContext.current
 
-    val publishers = listOf("천재교육", "미래엔", "비상교육", "동아출판")
+    val publishers = listOf("미래엔", "천재교육", "비상교육", "동아출판", "YBM", "지학사", "아이스크림미디어")
     val books = state.books.filter { 
         it.publisher == state.selectedPublisher && it.grade == state.selectedGrade 
     }
@@ -83,7 +84,10 @@ fun BookListScreen(viewModel: BookStoreViewModel) {
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             // 출판사 탭
-            TabRow(selectedTabIndex = publishers.indexOf(state.selectedPublisher)) {
+            ScrollableTabRow(
+                selectedTabIndex = publishers.indexOf(state.selectedPublisher),
+                edgePadding = 8.dp
+            ) {
                 publishers.forEach { pub ->
                     Tab(
                         selected = state.selectedPublisher == pub,
@@ -121,36 +125,52 @@ fun BookListScreen(viewModel: BookStoreViewModel) {
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(books, key = { it.id }) { book ->
-                        BookCard(
-                            book = book,
-                            isDownloaded = viewModel.isDownloaded(book),
-                            isDownloading = book.id in state.downloadingIds,
-                            progress = state.downloadProgress[book.id] ?: 0f,
-                            onDownload = { viewModel.download(book) },
-                            onOpen = {
-                                if (state.useExternalViewer) {
-                                    val pdfFile = viewModel.pdfFile(book)
-                                    if (pdfFile.exists()) {
-                                        try {
-                                            val uri = FileProvider.getUriForFile(
-                                                context,
-                                                "${context.packageName}.fileprovider",
-                                                pdfFile
-                                            )
-                                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                                setDataAndType(uri, "application/pdf")
-                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        if (book.publisher == "동아출판" || book.publisher == "YBM") {
+                            // 동아출판/YBM: PDF 직접 다운로드 불가 → 웹 뷰어 버튼만 표시
+                            BookCard(
+                                book = book,
+                                isDownloaded = true, // 항상 "열기" 버튼 표시
+                                isDownloading = false,
+                                progress = 0f,
+                                onDownload = { },
+                                onOpen = {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(book.viewPageId))
+                                    context.startActivity(intent)
+                                },
+                                isWebOnly = true
+                            )
+                        } else {
+                            BookCard(
+                                book = book,
+                                isDownloaded = viewModel.isDownloaded(book),
+                                isDownloading = book.id in state.downloadingIds,
+                                progress = state.downloadProgress[book.id] ?: 0f,
+                                onDownload = { viewModel.download(book) },
+                                onOpen = {
+                                    if (state.useExternalViewer) {
+                                        val pdfFile = viewModel.pdfFile(book)
+                                        if (pdfFile.exists()) {
+                                            try {
+                                                val uri = FileProvider.getUriForFile(
+                                                    context,
+                                                    "${context.packageName}.fileprovider",
+                                                    pdfFile
+                                                )
+                                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                                    setDataAndType(uri, "application/pdf")
+                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                }
+                                                context.startActivity(intent)
+                                            } catch (e: Exception) {
+                                                openBook = book
                                             }
-                                            context.startActivity(intent)
-                                        } catch (e: Exception) {
-                                            openBook = book
                                         }
+                                    } else {
+                                        openBook = book
                                     }
-                                } else {
-                                    openBook = book
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -165,7 +185,8 @@ fun BookCard(
     isDownloading: Boolean,
     progress: Float,
     onDownload: () -> Unit,
-    onOpen: () -> Unit
+    onOpen: () -> Unit,
+    isWebOnly: Boolean = false
 ) {
     val color = subjectColor(book.subject)
 
@@ -247,7 +268,17 @@ fun BookCard(
                 Modifier.padding(8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                if (isDownloaded) {
+                if (isWebOnly) {
+                    Button(
+                        onClick = onOpen,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = color)
+                    ) {
+                        Icon(Icons.Default.OpenInBrowser, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("웹 뷰어")
+                    }
+                } else if (isDownloaded) {
                     Button(
                         onClick = onOpen,
                         modifier = Modifier.fillMaxWidth(),
@@ -302,6 +333,7 @@ private fun subjectColor(subject: String): Color = when (subject) {
     "음악"    -> Color(0xFF283593)
     "체육"    -> Color(0xFFC62828)
     "실과"    -> Color(0xFF4E342E)
+    "보건"    -> Color(0xFFD81B60)
     else     -> Color(0xFF546E7A)
 }
 
@@ -314,5 +346,6 @@ private fun subjectIcon(subject: String): ImageVector = when (subject) {
     "음악"           -> Icons.Default.MusicNote
     "체육"           -> Icons.Default.DirectionsRun
     "실과"           -> Icons.Default.Build
+    "보건"           -> Icons.Default.Favorite
     else            -> Icons.Default.Book
 }
