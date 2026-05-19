@@ -3,9 +3,17 @@ import os
 
 actor PDFDownloadService {
 
-    // 단축 URL → PDF 다운로드 → 로컬 저장
+    // 단축 URL → PDF 다운로드 → 로컬 저장 (미래엔 등 redirect 기반)
     func downloadPDF(shortURL: String, to destination: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
         let pdfURL = try await resolvePDFURL(from: shortURL)
+        try await downloadFile(from: pdfURL, to: destination, progress: progress)
+    }
+
+    // 직접 PDF URL 다운로드 (아이스크림·지학사처럼 viewPageID 가 곧 PDF URL 인 경우)
+    func downloadDirectPDF(url: String, to destination: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
+        guard let pdfURL = URL(string: url) else {
+            throw DownloadError.invalidURL(url)
+        }
         try await downloadFile(from: pdfURL, to: destination, progress: progress)
     }
 
