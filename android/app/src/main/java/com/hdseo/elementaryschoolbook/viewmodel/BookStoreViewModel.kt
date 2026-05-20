@@ -7,6 +7,7 @@ import com.hdseo.elementaryschoolbook.data.Book
 import com.hdseo.elementaryschoolbook.data.BookCatalog
 import com.hdseo.elementaryschoolbook.service.BookCatalogService
 import com.hdseo.elementaryschoolbook.service.DongaCatalogService
+import com.hdseo.elementaryschoolbook.service.JihaksaCatalogService
 import com.hdseo.elementaryschoolbook.service.PdfDownloadService
 import com.hdseo.elementaryschoolbook.service.TsherpaCatalogService
 import com.hdseo.elementaryschoolbook.service.VivasamCatalogService
@@ -29,7 +30,8 @@ data class BookUiState(
     val catalogMessage: String? = null,
     val useExternalViewer: Boolean = false,
     val selectedPublisher: String = "미래엔",
-    val selectedGrade: Int = 3
+    val selectedGrade: Int = 3,
+    val openBook: Book? = null
 )
 
 class BookStoreViewModel(application: Application) : AndroidViewModel(application) {
@@ -40,6 +42,7 @@ class BookStoreViewModel(application: Application) : AndroidViewModel(applicatio
     private val tsherpaCatalogService = TsherpaCatalogService()
     private val vivasamCatalogService = VivasamCatalogService()
     private val dongaCatalogService = DongaCatalogService()
+    private val jihaksaCatalogService = JihaksaCatalogService()
     private val ybmCatalogService = YbmCatalogService()
     private val downloadService = PdfDownloadService()
     private val json = Json { ignoreUnknownKeys = true }
@@ -75,6 +78,10 @@ class BookStoreViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { it.copy(selectedGrade = grade) }
     }
 
+    fun setOpenBook(book: Book?) {
+        _uiState.update { it.copy(openBook = book) }
+    }
+
     fun updateSelectedPublisherCatalog() {
         val publisher = _uiState.value.selectedPublisher
         if (_uiState.value.isUpdatingCatalog) return
@@ -82,11 +89,12 @@ class BookStoreViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             _uiState.update { it.copy(isUpdatingCatalog = true) }
             try {
-                val deletedIds = loadDeletedBookIds()
                 val remoteBooks = when (publisher) {
                     "YBM" -> ybmCatalogService.fetchCatalogBooks()
+                    "동아출판" -> dongaCatalogService.fetchCatalogBooks()
+                    "지학사" -> jihaksaCatalogService.fetchCatalogBooks()
                     else -> builtInPublisherBooks(publisher)
-                }.filterNot { it.id in deletedIds }
+                }
 
                 if (remoteBooks.isEmpty()) {
                     throw Exception("$publisher 도서 목록을 가져오지 못했습니다.")
@@ -164,8 +172,25 @@ class BookStoreViewModel(application: Application) : AndroidViewModel(applicatio
                             }
                         }
                     }
-                    "지학사", "아이스크림미디어" -> {
-                        // 지학사·아이스크림: viewPageId 가 직접 PDF URL
+                    "지학사" -> {
+                        if (book.viewPageId.startsWith("http")) {
+                            downloadService.downloadPdf(book.viewPageId, book.pdfFile(filesDir), isDirectUrl = true) { progress ->
+                                _uiState.update { s ->
+                                    s.copy(downloadProgress = s.downloadProgress + (book.id to progress))
+                                }
+                            }
+                        } else {
+                            jihaksaCatalogService.downloadPdf(
+                                fileSeq = book.viewPageId,
+                                destination = book.pdfFile(filesDir)
+                            ) { progress ->
+                                _uiState.update { s ->
+                                    s.copy(downloadProgress = s.downloadProgress + (book.id to progress))
+                                }
+                            }
+                        }
+                    }
+                    "아이스크림미디어" -> {
                         downloadService.downloadPdf(book.viewPageId, book.pdfFile(filesDir), isDirectUrl = true) { progress ->
                             _uiState.update { s ->
                                 s.copy(downloadProgress = s.downloadProgress + (book.id to progress))
@@ -199,8 +224,13 @@ class BookStoreViewModel(application: Application) : AndroidViewModel(applicatio
     fun delete(book: Book) {
         book.pdfFile(filesDir).delete()
         book.annotationFile(filesDir).delete()
+
+        // 페이지별 어노테이션 파일들 삭제
+        filesDir.listFiles { _, name ->
+            name.startsWith("${book.id}_page_") && name.endsWith(".json")
+        }?.forEach { it.delete() }
+
         updateLastDownloaded(book.id, null)
-        markBookDeleted(book.id)
 
         val updated = _uiState.value.books.filterNot { it.id == book.id }
         saveCatalog(updated)
@@ -228,15 +258,6 @@ class BookStoreViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun saveCatalog(books: List<Book>) {
         prefs.edit().putString("catalog_books_json", json.encodeToString(books)).apply()
-    }
-
-    private fun loadDeletedBookIds(): Set<String> =
-        prefs.getStringSet("deleted_book_ids", emptySet()).orEmpty()
-
-    private fun markBookDeleted(bookId: String) {
-        val deletedIds = loadDeletedBookIds().toMutableSet()
-        deletedIds += bookId
-        prefs.edit().putStringSet("deleted_book_ids", deletedIds).apply()
     }
 
     private fun mergeCatalog(current: List<Book>, publisher: String, remote: List<Book>): List<Book> {
@@ -273,9 +294,17 @@ class BookStoreViewModel(application: Application) : AndroidViewModel(applicatio
                     isArchived = false,
                     catalogKey = remoteBook.catalogKey
                 )
-            } else if (existing.viewPageId.contains("|")) {
+            } else if (isSameDongaDir(existing, remoteBook) ||
+                (existing.publisher == "지학사" && existing.viewPageId.startsWith("http"))
+            ) {
                 result[existingIndex] = existing.copy(
-                    viewPageId = remoteBook.viewPageId,
+                    viewPageId = mergedViewPageId(existing, remoteBook),
+                    title = remoteBook.title,
+                    linkTitle = remoteBook.linkTitle,
+                    grade = remoteBook.grade,
+                    subject = remoteBook.subject,
+                    viewSection = remoteBook.viewSection,
+                    publisher = remoteBook.publisher,
                     catalogKey = remoteBook.catalogKey,
                     isArchived = false
                 )
@@ -309,11 +338,10 @@ class BookStoreViewModel(application: Application) : AndroidViewModel(applicatio
             afterBook.isArchived && beforePublisher.none { it.id == afterBook.id && it.isArchived }
         }
 
-        return when {
-            added > 0 || archived > 0 ->
-                "$publisher 도서 목록 업데이트 완료\n새 도서 $added개, 보관 처리 $archived개"
-            else ->
-                "$publisher 도서 목록이 최신 상태입니다."
+        return if (added > 0 || archived > 0) {
+            "$publisher 도서 목록 업데이트 완료\n새 도서 ${added}개, 보관 처리 ${archived}개"
+        } else {
+            "$publisher 도서 목록이 최신 상태입니다."
         }
     }
 
@@ -329,6 +357,21 @@ class BookStoreViewModel(application: Application) : AndroidViewModel(applicatio
             index += 1
         }
         return "$candidate-$index"
+    }
+
+    private fun isSameDongaDir(existing: Book, remote: Book): Boolean {
+        if (existing.publisher != "동아출판" || remote.publisher != "동아출판") return false
+        val existingDir = existing.viewPageId.substringBefore("|", "")
+        val remoteDir = remote.viewPageId.substringBefore("|", "")
+        return existingDir.isNotBlank() && existingDir == remoteDir
+    }
+
+    private fun mergedViewPageId(existing: Book, remote: Book): String {
+        if (!isSameDongaDir(existing, remote)) return remote.viewPageId
+
+        val existingMaxPage = existing.viewPageId.substringAfter("|", "").toIntOrNull() ?: 0
+        val remoteMaxPage = remote.viewPageId.substringAfter("|", "").toIntOrNull() ?: 0
+        return if (remoteMaxPage == 0 && existingMaxPage > 0) existing.viewPageId else remote.viewPageId
     }
 
     private fun updateLastDownloaded(bookId: String, timestamp: Long?) {

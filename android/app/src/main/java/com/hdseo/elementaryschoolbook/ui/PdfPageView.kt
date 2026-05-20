@@ -20,7 +20,33 @@ data class Stroke(
     val points: List<StrokePoint>,
     val color: Int = Color.BLUE,
     val width: Float = 4f
-)
+) {
+    @kotlinx.serialization.Transient
+    private var _path: Path? = null
+
+    fun getPath(): Path {
+        if (_path == null) {
+            _path = Path().apply {
+                if (points.isNotEmpty()) {
+                    moveTo(points[0].x, points[0].y)
+                    for (i in 1 until points.size) {
+                        val prev = points[i - 1]
+                        val curr = points[i]
+                        val midX = (prev.x + curr.x) / 2
+                        val midY = (prev.y + curr.y) / 2
+                        if (i == 1) {
+                            lineTo(midX, midY)
+                        } else {
+                            quadTo(prev.x, prev.y, midX, midY)
+                        }
+                    }
+                    lineTo(points.last().x, points.last().y)
+                }
+            }
+        }
+        return _path!!
+    }
+}
 
 @Serializable
 data class Annotation(val strokes: List<Stroke> = emptyList())
@@ -28,6 +54,11 @@ data class Annotation(val strokes: List<Stroke> = emptyList())
 // ── PDF 페이지 + 스타일러스 필기 뷰
 
 class PdfPageView(context: Context) : View(context) {
+
+    init {
+        // 비트맵이 너무 클 경우 하드웨어 가속에서 크래시가 발생할 수 있으므로 소프트웨어 렌더링 권장
+        setLayerType(LAYER_TYPE_SOFTWARE, null)
+    }
 
     var pageBitmap: Bitmap? = null
         set(value) { field = value; invalidate() }
@@ -48,13 +79,27 @@ class PdfPageView(context: Context) : View(context) {
         strokeJoin = Paint.Join.ROUND
     }
 
+    private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        isFilterBitmap = true
+        isDither = true
+    }
+
+    private val destRect = RectF()
+
     override fun onDraw(canvas: Canvas) {
-        // PDF 페이지 렌더링
-        pageBitmap?.let { canvas.drawBitmap(it, 0f, 0f, null) }
+        canvas.drawColor(Color.WHITE)
+
+        // PDF 페이지 렌더링 (뷰 크기에 맞춰 스케일링)
+        pageBitmap?.let {
+            destRect.set(0f, 0f, width.toFloat(), height.toFloat())
+            canvas.drawBitmap(it, null, destRect, bitmapPaint)
+        }
 
         // 완료된 획
         for (stroke in finishedStrokes) {
-            drawStroke(canvas, stroke.points, stroke.color, stroke.width)
+            strokePaint.color = stroke.color
+            strokePaint.strokeWidth = stroke.width
+            canvas.drawPath(stroke.getPath(), strokePaint)
         }
 
         // 현재 그리는 중인 획
@@ -70,9 +115,24 @@ class PdfPageView(context: Context) : View(context) {
 
         val path = Path()
         path.moveTo(points[0].x, points[0].y)
+
+        // QuadTo를 이용한 부드러운 곡선 처리
         for (i in 1 until points.size) {
-            path.lineTo(points[i].x, points[i].y)
+            val prev = points[i - 1]
+            val curr = points[i]
+            val midX = (prev.x + curr.x) / 2
+            val midY = (prev.y + curr.y) / 2
+
+            if (i == 1) {
+                path.lineTo(midX, midY)
+            } else {
+                path.quadTo(prev.x, prev.y, midX, midY)
+            }
         }
+
+        val last = points.last()
+        path.lineTo(last.x, last.y)
+
         canvas.drawPath(path, strokePaint)
     }
 
@@ -87,7 +147,13 @@ class PdfPageView(context: Context) : View(context) {
 
         when (event.action) {
             MotionEvent.ACTION_DOWN -> handleActionDown(x, y)
-            MotionEvent.ACTION_MOVE -> handleActionMove(x, y)
+            MotionEvent.ACTION_MOVE -> {
+                // 부드러운 드로잉을 위해 historical 포인트들도 추가
+                for (i in 0 until event.historySize) {
+                    handleActionMove(event.getHistoricalX(i), event.getHistoricalY(i))
+                }
+                handleActionMove(x, y)
+            }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> handleActionUp()
         }
         return true
@@ -103,6 +169,9 @@ class PdfPageView(context: Context) : View(context) {
     fun handleActionMove(x: Float, y: Float) {
         if (isDrawingStroke) {
             currentPoints.add(StrokePoint(x, y))
+            if (isEraserMode) {
+                eraseNear(listOf(StrokePoint(x, y)))
+            }
             invalidate()
         }
     }

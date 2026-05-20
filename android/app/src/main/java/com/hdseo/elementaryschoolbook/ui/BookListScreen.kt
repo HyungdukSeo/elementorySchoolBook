@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsRun
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,7 +33,6 @@ import java.util.*
 @Composable
 fun BookListScreen(viewModel: BookStoreViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var openBook by remember { mutableStateOf<Book?>(null) }
     val context = LocalContext.current
 
     val publishers = listOf("미래엔", "천재교육", "비상교육", "동아출판", "YBM", "지학사", "아이스크림미디어")
@@ -61,12 +62,12 @@ fun BookListScreen(viewModel: BookStoreViewModel) {
     }
 
     // 내장 PDF 리더 표시
-    openBook?.let { book ->
+    state.openBook?.let { book ->
         PdfReaderScreen(
             book = book,
             pdfFile = viewModel.pdfFile(book),
             annotationFile = viewModel.annotationFile(book),
-            onClose = { openBook = null }
+            onClose = { viewModel.setOpenBook(null) }
         )
         return
     }
@@ -180,11 +181,11 @@ fun BookListScreen(viewModel: BookStoreViewModel) {
                                             }
                                             context.startActivity(intent)
                                         } catch (e: Exception) {
-                                            openBook = book
+                                            viewModel.setOpenBook(book)
                                         }
                                     }
                                 } else {
-                                    openBook = book
+                                    viewModel.setOpenBook(book)
                                 }
                             }
                         )
@@ -205,6 +206,7 @@ fun BookCard(
     onDownload: () -> Unit,
     onOpen: () -> Unit,
     onDelete: () -> Unit,
+    canDelete: Boolean = true,
     isWebOnly: Boolean = false
 ) {
     val color = if (book.isArchived) Color(0xFF8A8F98) else subjectColor(book.subject)
@@ -235,7 +237,7 @@ fun BookCard(
             .fillMaxWidth()
             .combinedClickable(
                 onClick = {},
-                onLongClick = { showMenu = true }
+                onLongClick = { if (canDelete) showMenu = true }
             )
     ) {
         Column {
@@ -303,7 +305,7 @@ fun BookCard(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             LinearProgressIndicator(
-                                progress = progress,
+                                progress = { progress },
                                 color = Color.White,
                                 trackColor = Color.White.copy(alpha = 0.3f),
                                 modifier = Modifier
@@ -325,7 +327,7 @@ fun BookCard(
                 Modifier.padding(8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                if (showMenu) {
+                if (canDelete && showMenu) {
                     DropdownMenu(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
@@ -343,12 +345,20 @@ fun BookCard(
 
                 if (book.isArchived && !isDownloaded) {
                     OutlinedButton(
-                        onClick = { showDeleteConfirm = true },
+                        onClick = { if (canDelete) showDeleteConfirm = true },
+                        enabled = canDelete,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.Default.Delete, null, Modifier.size(14.dp))
+                        Icon(
+                            if (canDelete) Icons.Default.Delete else Icons.Default.Archive,
+                            null,
+                            Modifier.size(14.dp)
+                        )
                         Spacer(Modifier.width(4.dp))
-                        Text("삭제", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            if (canDelete) "삭제" else "보관됨",
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 } else if (isWebOnly) {
                     Button(
@@ -366,7 +376,7 @@ fun BookCard(
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = color)
                     ) {
-                        Icon(Icons.Default.MenuBook, null, Modifier.size(16.dp))
+                        Icon(Icons.AutoMirrored.Filled.MenuBook, null, Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("열기")
                     }
@@ -408,6 +418,7 @@ private fun subjectColor(subject: String): Color = when (subject) {
     "수학"    -> Color(0xFF1565C0)
     "수학익힘" -> Color(0xFF0097A7)
     "사회"    -> Color(0xFFE65100)
+    "사회과 부도" -> Color(0xFFEF6C00)
     "과학"    -> Color(0xFF2E7D32)
     "실험관찰" -> Color(0xFF00695C)
     "영어"    -> Color(0xFF6A1B9A)
@@ -421,12 +432,12 @@ private fun subjectColor(subject: String): Color = when (subject) {
 
 private fun subjectIcon(subject: String): ImageVector = when (subject) {
     "수학", "수학익힘" -> Icons.Default.Calculate
-    "사회"           -> Icons.Default.Public
+    "사회", "사회과 부도" -> Icons.Default.Public
     "과학", "실험관찰" -> Icons.Default.Science
     "영어"           -> Icons.Default.Translate
     "미술"           -> Icons.Default.Palette
     "음악"           -> Icons.Default.MusicNote
-    "체육"           -> Icons.Default.DirectionsRun
+    "체육"           -> Icons.AutoMirrored.Filled.DirectionsRun
     "실과"           -> Icons.Default.Build
     "보건"           -> Icons.Default.Favorite
     else            -> Icons.Default.Book
