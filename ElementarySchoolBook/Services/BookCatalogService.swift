@@ -504,10 +504,13 @@ actor DongaCatalogService {
 
     func downloadAndMerge(viewPageID: String, destination: URL, progress: @Sendable @escaping (Double) -> Void) async throws {
         let parts = viewPageID.split(separator: "|").map(String.init)
-        guard parts.count == 2, let maxPage = Int(parts[1]) else {
+        guard parts.count == 2, let rawMaxPage = Int(parts[1]) else {
             throw DongaError.invalidFormat
         }
         let dirCode = parts[0]
+        // 동적 카탈로그에서 받은 책은 maxPage = 0. HTML 파싱으로 실제 페이지 수 확인.
+        let maxPage = rawMaxPage > 0 ? rawMaxPage : (try await fetchMaxPage(dirCode: dirCode) ?? 0)
+        guard maxPage > 0 else { throw DongaError.maxPageUnknown }
 
         let tmpDir = destination.deletingPathExtension().appendingPathExtension("tmp")
         let fm = FileManager.default
@@ -571,16 +574,318 @@ actor DongaCatalogService {
         try data.write(to: destination, options: .atomic)
     }
 
+    // MARK: - 동적 카탈로그 (api.douclass.com)
+
+    /// 동아출판 홍보관 API 에서 도서 목록을 동적으로 가져옴.
+    func fetchCatalogBooks() async throws -> [Book] {
+        struct Source {
+            let code: String
+            let groups: [String]
+            let subject: String
+            let idPrefix: String
+            let fallbackGrades: [Int]
+        }
+        let sources: [Source] = [
+            Source(code: "P_EL_MAT", groups: ["EL_3_4", "EL_5_6"], subject: "수학",    idPrefix: "math",      fallbackGrades: []),
+            Source(code: "P_EL_SOC", groups: ["EL_3_4", "EL_5_6"], subject: "사회",    idPrefix: "social",    fallbackGrades: []),
+            Source(code: "P_EL_ATL", groups: ["EL_5_6"],            subject: "사회과 부도", idPrefix: "atlas",    fallbackGrades: [5, 6]),
+            Source(code: "P_EL_SCI", groups: [""],                   subject: "과학",    idPrefix: "sci",       fallbackGrades: []),
+            Source(code: "P_EL_ENG", groups: ["EL_3_4", "EL_5_6"], subject: "영어",    idPrefix: "eng",       fallbackGrades: []),
+            Source(code: "P_EL_MUS", groups: ["EL_3_4", "EL_5_6"], subject: "음악",    idPrefix: "music",     fallbackGrades: []),
+            Source(code: "P_EL_ART", groups: ["EL_3_4", "EL_5_6"], subject: "미술",    idPrefix: "art",       fallbackGrades: []),
+            Source(code: "P_EL_ATH", groups: ["EL_3_4", "EL_5_6"], subject: "체육",    idPrefix: "pe",        fallbackGrades: []),
+            Source(code: "P_EL_PRA", groups: ["EL_5_6"],            subject: "실과",    idPrefix: "practical", fallbackGrades: []),
+        ]
+
+        var all: [Book] = []
+        var seenKeys: Set<String> = []
+        for source in sources {
+            for group in source.groups {
+                let books = (try? await fetchSubjectBooks(code: source.code, group: group, subject: source.subject, idPrefix: source.idPrefix, fallbackGrades: source.fallbackGrades)) ?? []
+                for b in books where !seenKeys.contains(b.catalogKey) {
+                    seenKeys.insert(b.catalogKey)
+                    all.append(b)
+                }
+            }
+        }
+        return all
+    }
+
+    private func fetchSubjectBooks(code: String, group: String, subject: String, idPrefix: String, fallbackGrades: [Int]) async throws -> [Book] {
+        let groupQ = group.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? group
+        let urlStr = "https://api.douclass.com/api/promotion/info?subj_code=\(code)&subj_group_code=&school_grade=\(groupQ)"
+        guard let url = URL(string: urlStr) else { return [] }
+        let json = try await fetchDouclassJSON(url: url)
+        guard (json["ret_code"] as? Int) == 200,
+              let retData = json["ret_data"] as? [String: Any],
+              let list = retData["promotionTextbookList"] as? [[String: Any]] else { return [] }
+
+        var books: [Book] = []
+        for item in list {
+            books.append(contentsOf: try await booksFromTextbook(item: item, subject: subject, idPrefix: idPrefix, fallbackGrades: fallbackGrades))
+        }
+        return books
+    }
+
+    private func booksFromTextbook(item: [String: Any], subject: String, idPrefix: String, fallbackGrades: [Int]) async throws -> [Book] {
+        let textbookId = (item["textbook_id"] as? Int) ?? Int(item["textbook_id"] as? String ?? "") ?? 0
+        guard textbookId > 0 else { return [] }
+
+        let title = ((item["textBookInfo"] as? [String: Any])?["txbook_title"] as? String ?? "")
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+
+        // 제목에서 학년 추출 (예: "수학 3" → 3). 없으면 fallback.
+        let grades: [Int]
+        if let match = title.range(of: #"(\d)"#, options: .regularExpression),
+           let grade = Int(title[match].prefix(1)) {
+            grades = [grade]
+        } else {
+            grades = fallbackGrades
+        }
+        guard !grades.isEmpty else { return [] }
+
+        // textbookData 가 item 에 들어 있으면 사용, 아니면 별도 호출
+        let textbookData: [String: Any]?
+        if let inline = item["promotionTextbookData"] as? [String: Any] {
+            textbookData = inline
+        } else {
+            textbookData = try await fetchTextbookData(textbookId: textbookId)
+        }
+        guard let data = textbookData,
+              (data["textbook_file_show"] as? String) == "Y" else { return [] }
+
+        let fileUrl = data["textbook_file_url"] as? String ?? ""
+        guard let dirMatch = fileUrl.range(of: #"[?&]Dir=(\d+)"#, options: .regularExpression) else { return [] }
+        let dirCode = String(fileUrl[dirMatch])
+            .replacingOccurrences(of: #"[?&]Dir="#, with: "", options: .regularExpression)
+
+        return grades.map { grade in
+            let key = "da-\(idPrefix)-\(titleKey(title))-\(grade)"
+            return Book(id: key, title: title, grade: grade, subject: subject,
+                        viewPageID: "\(dirCode)|0",
+                        viewSection: "교과서", publisher: .donga, catalogKey: key)
+        }
+    }
+
+    private func fetchTextbookData(textbookId: Int) async throws -> [String: Any]? {
+        let urlStr = "https://api.douclass.com/api/promotion/textbook_data?textbook_id=\(textbookId)&useLoading=false"
+        guard let url = URL(string: urlStr) else { return nil }
+        let json = try await fetchDouclassJSON(url: url)
+        guard (json["ret_code"] as? Int) == 200,
+              let retData = json["ret_data"] as? [String: Any] else { return nil }
+        return retData["promotionTextbookData"] as? [String: Any]
+    }
+
+    private func fetchMaxPage(dirCode: String) async throws -> Int? {
+        guard let url = URL(string: "https://ebook.dongapublishing.com/ebook/ecatalog5.asp?Dir=\(dirCode)") else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let html = String(data: data, encoding: .utf8) ?? ""
+        let pattern = #"set_pageinfo\('[^']*','\d+',\d+,(\d+),"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+              let range = Range(match.range(at: 1), in: html) else { return nil }
+        return Int(html[range])
+    }
+
+    private func fetchDouclassJSON(url: URL) async throws -> [String: Any] {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("CHN_MID_HI", forHTTPHeaderField: "Channel-Type")
+        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw DongaError.httpError((response as? HTTPURLResponse)?.statusCode ?? -1)
+        }
+        return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
+    private nonisolated func titleKey(_ title: String) -> String {
+        title.replacingOccurrences(of: #"\s+"#, with: "-", options: .regularExpression)
+             .replacingOccurrences(of: #"[^0-9A-Za-z가-힣\-]"#, with: "", options: .regularExpression)
+    }
+
     enum DongaError: LocalizedError {
         case invalidFormat
         case httpError(Int)
         case incompleteDownload(Int, Int)
+        case maxPageUnknown
         var errorDescription: String? {
             switch self {
             case .invalidFormat:                return "동아출판 데이터 형식 오류 (dirCode|maxPage)"
             case .httpError(let c):             return "동아출판 페이지 다운로드 실패 (HTTP \(c))"
             case .incompleteDownload(let g, let t):
                 return "동아출판 페이지 다운로드 불완전 (\(g)/\(t))"
+            case .maxPageUnknown:               return "동아출판 페이지 수 확인 실패"
+            }
+        }
+    }
+}
+
+// MARK: - 지학사 (Base64 인코딩 JSON API + POST 다운로드)
+
+actor JihaksaCatalogService {
+    private let downloadableSections: Set<String> = ["교과서", "수학익힘", "실험관찰"]
+
+    /// 전체 카탈로그 동적 조회 (3~6학년, 1~2학기)
+    func fetchCatalogBooks() async throws -> [Book] {
+        var textbooks: [(grade: Int, item: [String: Any])] = []
+        for grade in 3...6 {
+            for term in 1...2 {
+                let list = (try? await fetchTextbookList(grade: grade, term: term)) ?? []
+                for item in list {
+                    textbooks.append((grade, item))
+                }
+            }
+        }
+
+        var all: [Book] = []
+        var seenKeys: Set<String> = []
+        for entry in textbooks {
+            let books = (try? await booksForTextbook(grade: entry.grade, textbook: entry.item)) ?? []
+            for b in books where !seenKeys.contains(b.catalogKey) {
+                seenKeys.insert(b.catalogKey)
+                all.append(b)
+            }
+        }
+        return all
+    }
+
+    /// fileSeq 로 PDF 다운로드 (POST seq=fileSeq → 응답 본문이 PDF)
+    func downloadPDF(fileSeq: String, to destination: URL, progress: @Sendable @escaping (Double) -> Void) async throws {
+        guard let url = URL(string: "https://tsol.jihak.co.kr/file/download.ez") else {
+            throw JihaksaError.invalidURL
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        request.httpBody = "seq=\(fileSeq)".data(using: .utf8)
+        request.timeoutInterval = 60
+
+        let (tempURL, response) = try await URLSession.shared.download(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw JihaksaError.httpError((response as? HTTPURLResponse)?.statusCode ?? -1)
+        }
+        let fm = FileManager.default
+        if fm.fileExists(atPath: destination.path) {
+            try fm.removeItem(at: destination)
+        }
+        try fm.moveItem(at: tempURL, to: destination)
+        progress(1.0)
+    }
+
+    // MARK: - 내부
+
+    private func fetchTextbookList(grade: Int, term: Int) async throws -> [[String: Any]] {
+        let urlStr = "https://tsol.jihak.co.kr/api/v1/textbook/ele/SNB/list.ez?grade=\(grade)&term=\(term)"
+        guard let url = URL(string: urlStr) else { return [] }
+        let body = try await get(url: url)
+        guard let decoded = Data(base64Encoded: body),
+              let json = try? JSONSerialization.jsonObject(with: decoded) as? [String: Any],
+              let list = json["list"] as? [[String: Any]] else { return [] }
+        return list
+    }
+
+    private func fetchDataList(textbookSeq: String) async throws -> [[String: Any]] {
+        let payload: [String: Any] = [
+            "textbookSeq": textbookSeq,
+            "schoolTypeSeq": "SUBJECT_SCHOOLTYPE_ELEMENTARY",
+        ]
+        let payloadData = try JSONSerialization.data(withJSONObject: payload)
+        let encoded = payloadData.base64EncodedString()
+
+        guard let url = URL(string: "https://tsol.jihak.co.kr/api/v1/textbook/data/list.ez") else { return [] }
+        let body = try await postText(url: url, body: encoded)
+        guard let decoded = Data(base64Encoded: body),
+              let json = try? JSONSerialization.jsonObject(with: decoded) as? [String: Any],
+              let list = json["dataList"] as? [[String: Any]] else { return [] }
+        return list
+    }
+
+    private func booksForTextbook(grade: Int, textbook: [String: Any]) async throws -> [Book] {
+        guard let textbookSeq = textbook["textbookSeq"] as? String, !textbookSeq.isEmpty,
+              let subjectName = (textbook["subjectName"] as? String)?.trimmingCharacters(in: .whitespaces), !subjectName.isEmpty
+        else { return [] }
+        let rawName = textbook["textbookName"] as? String ?? ""
+        let textbookName = normalizeTitle(rawName)
+        guard !textbookName.isEmpty else { return [] }
+
+        let dataList = try await fetchDataList(textbookSeq: textbookSeq)
+        var books: [Book] = []
+        for data in dataList {
+            let dataName = (data["dataName"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+            guard downloadableSections.contains(dataName) else { continue }
+            guard let fileSeq = data["dataFileSeq"] as? String, !fileSeq.isEmpty else { continue }
+
+            let subject: String
+            let title: String
+            switch dataName {
+            case "수학익힘":
+                subject = "수학익힘"
+                title = textbookName.replacingOccurrences(of: "수학", with: "수학익힘")
+            case "실험관찰":
+                subject = "실험관찰"
+                title = textbookName.replacingOccurrences(of: "과학", with: "실험관찰")
+            default:
+                subject = subjectName
+                title = textbookName
+            }
+            let key = "jh-\(titleKey(title))-\(dataName)"
+            books.append(Book(id: key, title: title, grade: grade, subject: subject,
+                              viewPageID: fileSeq, viewSection: dataName,
+                              publisher: .jihaksa, catalogKey: key))
+        }
+        return books
+    }
+
+    private nonisolated func titleKey(_ title: String) -> String {
+        title.replacingOccurrences(of: #"\s+"#, with: "-", options: .regularExpression)
+             .replacingOccurrences(of: #"[^0-9A-Za-z가-힣\-]"#, with: "", options: .regularExpression)
+    }
+
+    private nonisolated func normalizeTitle(_ title: String) -> String {
+        title.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+             .replacingOccurrences(of: #"([가-힣])(\d)"#, with: "$1 $2", options: .regularExpression)
+             .trimmingCharacters(in: .whitespaces)
+    }
+
+    private func get(url: URL) async throws -> String {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw JihaksaError.httpError((response as? HTTPURLResponse)?.statusCode ?? -1)
+        }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    private func postText(url: URL, body: String) async throws -> String {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("text/plain;charset=UTF-8", forHTTPHeaderField: "Content-Type")
+        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        request.httpBody = body.data(using: .utf8)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw JihaksaError.httpError((response as? HTTPURLResponse)?.statusCode ?? -1)
+        }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    enum JihaksaError: LocalizedError {
+        case invalidURL
+        case httpError(Int)
+        var errorDescription: String? {
+            switch self {
+            case .invalidURL:       return "지학사 URL 오류"
+            case .httpError(let c): return "지학사 서버 오류 (HTTP \(c))"
             }
         }
     }

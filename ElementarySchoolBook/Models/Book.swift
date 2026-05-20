@@ -11,13 +11,8 @@ enum Publisher: String, CaseIterable, Codable {
     case jihaksa    = "지학사"
     case iscream    = "아이스크림미디어"
 
-    /// 카탈로그 동적 업데이트가 불가한 출판사 (정적 데이터만 존재)
-    var supportsCatalogUpdate: Bool {
-        switch self {
-        case .donga, .jihaksa: return false
-        default:               return true
-        }
-    }
+    /// 모든 출판사가 카탈로그 동적 업데이트를 지원. (Donga / Jihaksa 도 API 추가됨)
+    var supportsCatalogUpdate: Bool { true }
 }
 
 // MARK: - Book

@@ -21,6 +21,7 @@ final class BookStore: ObservableObject {
     private let ybmService = YbmCatalogService()
     private let visangService = VisangCatalogService()
     private let dongaService = DongaCatalogService()
+    private let jihaksaService = JihaksaCatalogService()
     private let downloadService = PDFDownloadService()
 
     private let booksKey = "booksData_v2"
@@ -74,8 +75,17 @@ final class BookStore: ObservableObject {
             let shortURL = try await catalogService.fetchShortURL(for: book)
             try await downloadService.downloadPDF(shortURL: shortURL, to: book.localPDFPath, progress: progressHandler)
 
-        case .iscream, .jihaksa:
+        case .iscream:
             try await downloadService.downloadDirectPDF(url: book.viewPageID, to: book.localPDFPath, progress: progressHandler)
+
+        case .jihaksa:
+            // 정적 카탈로그: viewPageID 가 직접 PDF URL (https://...)
+            // 동적 카탈로그: viewPageID 가 fileSeq → POST 다운로드
+            if book.viewPageID.hasPrefix("http") {
+                try await downloadService.downloadDirectPDF(url: book.viewPageID, to: book.localPDFPath, progress: progressHandler)
+            } else {
+                try await jihaksaService.downloadPDF(fileSeq: book.viewPageID, to: book.localPDFPath, progress: progressHandler)
+            }
 
         case .chunjae:
             let pdfURL = try await tsherpaService.resolvePDFURL(filePath: book.viewPageID)
@@ -123,6 +133,10 @@ final class BookStore: ObservableObject {
                 switch publisher {
                 case .ybm:
                     fetched = try await ybmService.fetchCatalogBooks()
+                case .donga:
+                    fetched = try await dongaService.fetchCatalogBooks()
+                case .jihaksa:
+                    fetched = try await jihaksaService.fetchCatalogBooks()
                 case .miraen:
                     fetched = BookCatalog.MiraeN.all
                 case .chunjae:
@@ -131,8 +145,6 @@ final class BookStore: ObservableObject {
                     fetched = BookCatalog.Visang.all
                 case .iscream:
                     fetched = BookCatalog.IScream.all
-                case .donga, .jihaksa:
-                    return
                 }
                 let summary = mergeCatalog(fetched, for: publisher)
                 catalogMessage = summary
@@ -215,21 +227,10 @@ final class BookStore: ObservableObject {
             for sb in staticBooks where !savedKeys.contains(sb.catalogKey) {
                 books.append(sb)
             }
-            // 동아·지학사는 카탈로그가 정적이라 항상 전체가 있어야 함 — 누락 보강
-            ensureStaticCompleteness(for: .donga, staticBooks: staticBooks)
-            ensureStaticCompleteness(for: .jihaksa, staticBooks: staticBooks)
             saveBooks()
         } else {
             books = staticBooks
             saveBooks()
-        }
-    }
-
-    private func ensureStaticCompleteness(for publisher: Publisher, staticBooks: [Book]) {
-        let publisherStatic = staticBooks.filter { $0.publisher == publisher.rawValue }
-        let existingIDs = Set(books.filter { $0.publisher == publisher.rawValue }.map(\.id))
-        for sb in publisherStatic where !existingIDs.contains(sb.id) {
-            books.append(sb)
         }
     }
 
