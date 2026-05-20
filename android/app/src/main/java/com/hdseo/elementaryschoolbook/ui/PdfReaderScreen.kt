@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -40,6 +41,14 @@ private const val MIN_RENDER_SIZE = 64
 private const val MAX_RENDER_DIMENSION = 2500
 private const val MAX_RENDER_PIXELS = 8_000_000
 private const val TALL_PAGE_ASPECT_THRESHOLD = 0.45f
+private const val MAX_TILE_HEIGHT = 1400
+
+private data class RenderedPdfPage(
+    val width: Int,
+    val height: Int,
+    val tiles: List<Bitmap>,
+    val isTiled: Boolean
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -277,27 +286,27 @@ private fun PdfPageItem(
     onViewCreated: (PdfPageView) -> Unit,
     onViewDisposed: () -> Unit
 ) {
-    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var renderedPage by remember { mutableStateOf<RenderedPdfPage?>(null) }
 
-    LaunchedEffect(pdfFile, index, screenWidth) {
-        bitmap = null
-        bitmap = withContext(Dispatchers.IO) {
-            renderSinglePage(pdfFile, index, screenWidth)
+    LaunchedEffect(pdfFile, index, screenWidth, screenHeight) {
+        renderedPage = null
+        renderedPage = withContext(Dispatchers.IO) {
+            renderSinglePage(pdfFile, index, screenWidth, screenHeight)
         }
     }
 
     DisposableEffect(index) {
         onDispose {
             onViewDisposed()
-            bitmap = null
+            renderedPage = null
         }
     }
 
-    if (bitmap != null) {
-        val b = bitmap!!
-        val pageAspect = b.width.toFloat() / b.height
+    if (renderedPage != null) {
+        val page = renderedPage!!
+        val pageAspect = page.width.toFloat() / page.height
         val isVeryTallPage = pageAspect < TALL_PAGE_ASPECT_THRESHOLD
-        val shouldFitTallPage = isVeryTallPage && screenHeight > 0 && screenWidth > screenHeight
+        val shouldFitTallPage = isVeryTallPage && !page.isTiled && screenHeight > 0 && screenWidth > screenHeight
         val naturalHeightPx = (screenWidth / pageAspect).roundToInt().coerceAtLeast(MIN_RENDER_SIZE)
         val displayHeightPx = if (shouldFitTallPage) {
             naturalHeightPx.coerceAtMost(screenHeight)
@@ -314,30 +323,53 @@ private fun PdfPageItem(
         val displayWidthDp = with(density) { displayWidthPx.toDp() }
 
         Box(modifier = Modifier.fillMaxWidth().height(displayHeightDp)) {
-            AndroidView(
-                factory = { ctx ->
-                    PdfPageView(ctx).also { view ->
-                        view.pageBitmap = b
+            if (page.isTiled) {
+                Column(
+                    modifier = Modifier
+                        .width(displayWidthDp)
+                        .height(displayHeightDp)
+                        .align(Alignment.TopCenter)
+                ) {
+                    page.tiles.forEach { tile ->
+                        val tileHeightDp = with(density) {
+                            (displayHeightPx * (tile.height.toFloat() / page.height)).toDp()
+                        }
+                        Image(
+                            bitmap = tile.asImageBitmap(),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .width(displayWidthDp)
+                                .height(tileHeightDp)
+                        )
+                    }
+                }
+            } else {
+                val b = page.tiles.first()
+                AndroidView(
+                    factory = { ctx ->
+                        PdfPageView(ctx).also { view ->
+                            view.pageBitmap = b
+                            view.strokeColor = strokeColor
+                            view.strokeWidth = strokeWidth
+                            view.isEraserMode = isEraserMode
+                            annotationFile?.let { view.loadAnnotation(it) }
+                            onViewCreated(view)
+                        }
+                    },
+                    update = { view ->
+                        if (view.pageBitmap !== b) {
+                            view.pageBitmap = b
+                        }
                         view.strokeColor = strokeColor
                         view.strokeWidth = strokeWidth
                         view.isEraserMode = isEraserMode
-                        annotationFile?.let { view.loadAnnotation(it) }
-                        onViewCreated(view)
-                    }
-                },
-                update = { view ->
-                    if (view.pageBitmap !== b) {
-                        view.pageBitmap = b
-                    }
-                    view.strokeColor = strokeColor
-                    view.strokeWidth = strokeWidth
-                    view.isEraserMode = isEraserMode
-                },
-                modifier = Modifier
-                    .width(displayWidthDp)
-                    .height(displayHeightDp)
-                    .align(Alignment.TopCenter)
-            )
+                    },
+                    modifier = Modifier
+                        .width(displayWidthDp)
+                        .height(displayHeightDp)
+                        .align(Alignment.TopCenter)
+                )
+            }
         }
     } else {
         Box(
@@ -406,7 +438,12 @@ private fun ColorToolMenu(
     )
 }
 
-private fun renderSinglePage(pdfFile: File, pageIndex: Int, screenWidth: Int): Bitmap? {
+private fun renderSinglePage(
+    pdfFile: File,
+    pageIndex: Int,
+    screenWidth: Int,
+    screenHeight: Int
+): RenderedPdfPage? {
     if (screenWidth <= 0) return null
     return try {
         ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
@@ -416,11 +453,33 @@ private fun renderSinglePage(pdfFile: File, pageIndex: Int, screenWidth: Int): B
                     val pw = page.width.coerceAtLeast(1)
                     val ph = page.height.coerceAtLeast(1)
                     val pageAspect = ph.toFloat() / pw
+                    val displayAspect = pw.toFloat() / ph
+                    val shouldTile = displayAspect < TALL_PAGE_ASPECT_THRESHOLD &&
+                        screenHeight > 0 &&
+                        screenWidth > screenHeight
 
                     // screenWidth is already in pixels from Compose constraints.
                     // Keep render size inside PdfRenderer/device bitmap limits for very tall pages.
                     var rw = screenWidth.coerceIn(MIN_RENDER_SIZE, MAX_RENDER_DIMENSION)
                     var rh = (rw * pageAspect).roundToInt().coerceAtLeast(MIN_RENDER_SIZE)
+
+                    if (shouldTile && rh > MAX_TILE_HEIGHT) {
+                        val tiles = mutableListOf<Bitmap>()
+                        var top = 0
+                        while (top < rh) {
+                            val tileHeight = minOf(MAX_TILE_HEIGHT, rh - top)
+                            val bitmap = Bitmap.createBitmap(rw, tileHeight, Bitmap.Config.ARGB_8888)
+                            bitmap.eraseColor(android.graphics.Color.WHITE)
+                            val transform = Matrix().apply {
+                                postScale(rw.toFloat() / pw.toFloat(), rh.toFloat() / ph.toFloat())
+                                postTranslate(0f, -top.toFloat())
+                            }
+                            page.render(bitmap, null, transform, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                            tiles += bitmap
+                            top += tileHeight
+                        }
+                        return@use RenderedPdfPage(rw, rh, tiles, isTiled = true)
+                    }
 
                     val largestSide = maxOf(rw, rh)
                     if (largestSide > MAX_RENDER_DIMENSION) {
@@ -447,7 +506,7 @@ private fun renderSinglePage(pdfFile: File, pageIndex: Int, screenWidth: Int): B
                     transform.postScale(scaleX, scaleY)
 
                     page.render(bitmap, null, transform, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                    bitmap
+                    RenderedPdfPage(rw, rh, listOf(bitmap), isTiled = false)
                 }
             }
         }
